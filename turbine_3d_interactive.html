@@ -807,12 +807,44 @@
             // Renderer: physically-correct pipeline
             renderer.outputEncoding = THREE.sRGBEncoding;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.15;
+            renderer.toneMappingExposure = 1.2; // Brighter for outdoor scene
             renderer.physicallyCorrectLights = true;
 
-            // Bigger sun & soft shadows
-            directionalLight.intensity = 3.0;
-            directionalLight.shadow.mapSize.set(2048,2048);
+            // Enhanced lighting for photorealism
+            // 1. Warm sunlight (5500K color temperature)
+            directionalLight.color.setHex(0xffffee);
+            directionalLight.intensity = 3.5;
+            directionalLight.position.set(100, 80, 100); // More dramatic angle
+            
+            // 2. Enhanced shadow system (4096x4096 for crisp shadows)
+            directionalLight.shadow.mapSize.set(4096, 4096);
+            directionalLight.shadow.camera.left = -150;
+            directionalLight.shadow.camera.right = 150;
+            directionalLight.shadow.camera.top = 150;
+            directionalLight.shadow.camera.bottom = -150;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.bias = -0.0001; // Prevent shadow acne
+            directionalLight.shadow.radius = 2; // Softer shadow edges
+            
+            // 3. Hemisphere light for natural sky/ground bounce
+            const hemiLight = new THREE.HemisphereLight(
+                0x87ceeb,  // Sky color (light blue)
+                0x4a7c2f,  // Ground color (grass green)
+                0.6        // Intensity
+            );
+            hemiLight.position.set(0, 50, 0);
+            scene.add(hemiLight);
+            hemiLight.userData.isPhotoModeLight = true;
+            
+            // 4. Subtle rim light from opposite side
+            const rimLight = new THREE.DirectionalLight(0xccddff, 0.3);
+            rimLight.position.set(-80, 40, -80);
+            scene.add(rimLight);
+            rimLight.userData.isPhotoModeLight = true;
+            
+            // 5. Atmospheric fog for depth
+            scene.fog = new THREE.FogExp2(0xe0f0ff, 0.0015); // Exponential fog, horizon color
 
             // HDRI env for reflections only
             if (!pmremGen) pmremGen = new THREE.PMREMGenerator(renderer);
@@ -823,12 +855,13 @@
                 hdr.dispose();
             });
             
-            // Create photorealistic sky gradient
+            // Create photorealistic sky gradient (3-color)
             const skyGeo = new THREE.SphereGeometry(800, 32, 15);
             const skyMat = new THREE.ShaderMaterial({
                 uniforms: {
-                    topColor: { value: new THREE.Color(0x0077ff) },      // Blue sky
-                    bottomColor: { value: new THREE.Color(0xe0f0ff) },   // Horizon color
+                    topColor: { value: new THREE.Color(0x0055dd) },      // Deep blue sky
+                    midColor: { value: new THREE.Color(0x4d9fff) },      // Mid blue
+                    bottomColor: { value: new THREE.Color(0xffffff) },   // Horizon white
                     offset: { value: 33 },
                     exponent: { value: 0.6 }
                 },
@@ -842,13 +875,24 @@
                 `,
                 fragmentShader: `
                     uniform vec3 topColor;
+                    uniform vec3 midColor;
                     uniform vec3 bottomColor;
                     uniform float offset;
                     uniform float exponent;
                     varying vec3 vWorldPosition;
                     void main() {
                         float h = normalize(vWorldPosition + offset).y;
-                        gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+                        h = max(pow(max(h, 0.0), exponent), 0.0);
+                        
+                        // 3-color gradient: horizon -> mid -> top
+                        vec3 color;
+                        if (h < 0.5) {
+                            color = mix(bottomColor, midColor, h * 2.0);
+                        } else {
+                            color = mix(midColor, topColor, (h - 0.5) * 2.0);
+                        }
+                        
+                        gl_FragColor = vec4(color, 1.0);
                     }
                 `,
                 side: THREE.BackSide
@@ -857,9 +901,23 @@
             skyboxMesh.renderOrder = -1;
             scene.add(skyboxMesh);
             
-            // Create rolling hillside terrain
-            const hillGeo = new THREE.PlaneGeometry(800, 800, 50, 50);
+            // Add sun disk for realism
+            const sunGeo = new THREE.SphereGeometry(15, 16, 16);
+            const sunMat = new THREE.MeshBasicMaterial({
+                color: 0xffffdd,
+                fog: false
+            });
+            const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+            sunMesh.position.set(450, 350, 450); // Position relative to sun direction
+            sunMesh.userData.isSun = true;
+            scene.add(sunMesh);
+            
+            // Create rolling hillside terrain with enhanced detail
+            const hillGeo = new THREE.PlaneGeometry(800, 800, 80, 80); // Increased from 50x50 to 80x80
             const vertices = hillGeo.attributes.position.array;
+            
+            // Add vertex colors for grass variation
+            const colors = new Float32Array(vertices.length);
             
             // Create rolling hills with multiple waves
             for (let i = 0; i < vertices.length; i += 3) {
@@ -870,20 +928,34 @@
                 // Multiple sine waves for natural-looking hills
                 let height = Math.sin(x * 0.01) * 8 + Math.cos(z * 0.012) * 6;
                 height += Math.sin(x * 0.03 + z * 0.02) * 3;
-                height += Math.sin(distance * 0.008) * 10;
+                height += Math.sin(distance * 0.008) * 12; // Increased amplitude
                 height -= distance * 0.02; // Gentle slope down
                 
+                // Add valleys and ridges
+                height += Math.sin(x * 0.005) * Math.cos(z * 0.006) * 5;
+                
                 vertices[i + 2] = height;
+                
+                // Color variation (lighter and darker grass patches)
+                const colorVariation = 0.8 + Math.random() * 0.4; // 0.8 to 1.2
+                const heightFactor = 1.0 - (distance / 800) * 0.3; // Darker in distance
+                const finalColor = colorVariation * heightFactor;
+                
+                colors[i] = finalColor;     // R
+                colors[i + 1] = finalColor; // G
+                colors[i + 2] = finalColor; // B
             }
             
+            hillGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
             hillGeo.computeVertexNormals();
             
-            // Grass-colored material with some variation
+            // Enhanced grass material with roughness variation
             const hillMat = new THREE.MeshStandardMaterial({
                 color: 0x4a7c2f,
                 roughness: 0.9,
                 metalness: 0.0,
-                flatShading: false
+                flatShading: false,
+                vertexColors: true // Use vertex colors for variation
             });
             
             const hillMesh = new THREE.Mesh(hillGeo, hillMat);
@@ -896,17 +968,59 @@
             // Hide original ground in photo mode
             ground.visible = false;
 
-            // Swap to PBR-ish materials
+            // Swap to enhanced PBR materials
             forEachMesh((m)=>{
                 const old = OriginalMats.get(m);
                 if (!old.userData?.__pbrClone){
-                    const pbr = new THREE.MeshPhysicalMaterial({
-                        color: (m===tower||m===nacelle||m===hub) ? 0xd0d5db : (m===ground ? 0x4a7c59 : 0xcccccc),
-                        metalness: (m===tower||m===nacelle||m===hub) ? 0.7 : 0.0,
-                        roughness: (m===tower||m===nacelle||m===hub) ? 0.25 : 0.35,
-                        clearcoat: 0.8, clearcoatRoughness: 0.15,
-                        envMapIntensity: 1.0
-                    });
+                    let pbr;
+                    if (m === tower) {
+                        // Tower: Painted metal (more metallic, less rough)
+                        pbr = new THREE.MeshPhysicalMaterial({
+                            color: 0xe5e5e5,
+                            metalness: 0.85,
+                            roughness: 0.2,
+                            clearcoat: 0.3,
+                            clearcoatRoughness: 0.25,
+                            envMapIntensity: 1.2
+                        });
+                    } else if (m === nacelle) {
+                        // Nacelle: Painted metal housing
+                        pbr = new THREE.MeshPhysicalMaterial({
+                            color: 0xf0f0f0,
+                            metalness: 0.8,
+                            roughness: 0.25,
+                            clearcoat: 0.4,
+                            clearcoatRoughness: 0.2,
+                            envMapIntensity: 1.2
+                        });
+                    } else if (m === hub) {
+                        // Hub: Cast iron/steel (darker, more metal)
+                        pbr = new THREE.MeshPhysicalMaterial({
+                            color: 0x666666,
+                            metalness: 0.8,
+                            roughness: 0.3,
+                            clearcoat: 0.2,
+                            clearcoatRoughness: 0.4,
+                            envMapIntensity: 1.0
+                        });
+                    } else if (m === ground) {
+                        // Ground (not used in photo mode, but handle anyway)
+                        pbr = new THREE.MeshStandardMaterial({
+                            color: 0x4a7c59,
+                            roughness: 0.9,
+                            metalness: 0.0
+                        });
+                    } else {
+                        // Blades: Composite material with clearcoat
+                        pbr = new THREE.MeshPhysicalMaterial({
+                            color: 0xdddddd,
+                            metalness: 0.1,
+                            roughness: 0.4,
+                            clearcoat: 0.6, // Glossy composite finish
+                            clearcoatRoughness: 0.25,
+                            envMapIntensity: 0.8
+                        });
+                    }
                     old.userData = old.userData || {};
                     old.userData.__pbrClone = pbr;
                     m.material = pbr;
@@ -921,16 +1035,17 @@
                 seg.material.emissiveIntensity = 0.6;
             });
 
-            // Postprocessing stack
+            // Enhanced postprocessing stack
             composer = new THREE.EffectComposer(renderer);
             renderPass = new THREE.RenderPass(scene, camera);
             composer.addPass(renderPass);
 
+            // Subtle bloom for highlights (reduced for realism)
             bloomPass = new THREE.UnrealBloomPass(
                 new THREE.Vector2(window.innerWidth, window.innerHeight),
-                PhotoConfig.bloomStrength,
-                PhotoConfig.bloomRadius,
-                PhotoConfig.bloomThreshold
+                0.25,  // Reduced strength (was 0.35)
+                0.8,   // Radius
+                0.9    // Higher threshold (was 0.85) - less bloom on normal objects
             );
             composer.addPass(bloomPass);
 
@@ -961,10 +1076,19 @@
             renderer.toneMapping = THREE.NoToneMapping;
             renderer.toneMappingExposure = 1.0;
 
-            // Restore simple light intensity
+            // Restore simple light intensity and color
             directionalLight.intensity = OriginalLook.dirLightIntensity;
+            directionalLight.color.setHex(0xffffff);
+            directionalLight.position.set(50, 50, 50);
 
-            // Restore background/fog and remove skybox
+            // Remove photo mode lights (hemisphere and rim light)
+            scene.children.forEach((child, index) => {
+                if (child.userData && child.userData.isPhotoModeLight) {
+                    scene.remove(child);
+                }
+            });
+
+            // Restore background/fog and remove skybox + sun
             scene.environment = null;
             scene.background = OriginalLook.background || new THREE.Color(0x87ceeb);
             scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
@@ -976,6 +1100,15 @@
                 skyboxMesh.material.dispose();
                 skyboxMesh = null;
             }
+            
+            // Remove sun disk
+            scene.children.forEach(child => {
+                if (child.userData && child.userData.isSun) {
+                    scene.remove(child);
+                    child.geometry.dispose();
+                    child.material.dispose();
+                }
+            });
             
             // Remove hillside and restore original ground
             scene.children.forEach(child => {
