@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Wind Turbine 3D</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #controls-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 350px;
+            max-height: 90vh;
+            overflow-y: auto;
+            cursor: move;
+        }
+        #controls-panel.minimized #controls-content {
+            display: none;
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        h2 {
+            color: #333;
+            font-size: 1.5em;
+            margin: 0;
+        }
+        .minimize-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 1.2em;
+            line-height: 1;
+        }
+        .minimize-btn:hover {
+            background: #5568d3;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+        input[type="range"] {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        .value-display {
+            display: inline-block;
+            min-width: 50px;
+            text-align: right;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .info-text {
+            font-size: 0.85em;
+            color: #777;
+            margin-top: 3px;
+        }
+        #stats {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            min-width: 200px;
+            cursor: move;
+        }
+        #stats h3 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 1.2em;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        .stat-label {
+            color: #666;
+        }
+        .stat-value {
+            font-weight: bold;
+            color: #667eea;
+        }
+        #legend {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            cursor: move;
+        }
+        #legend h3 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 1.1em;
+        }
+        .legend-gradient {
+            height: 30px;
+            background: linear-gradient(to right, 
+                #0000ff, #0080ff, #00ffff, #00ff00, 
+                #ffff00, #ff8000, #ff0000, #8b0000);
+            border-radius: 5px;
+            margin-bottom: 8px;
+        }
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85em;
+            color: #666;
+        }
+        #plot-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            width: 600px;
+            max-height: 500px;
+            overflow-y: auto;
+            cursor: move;
+        }
+        #plot-panel.minimized #plot-content {
+            display: none;
+        }
+        .plot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .plot-title {
+            color: #333;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        .plot-controls {
+            margin-bottom: 15px;
+        }
+        .chart-container {
+            margin-bottom: 20px;
+            height: 200px;
+        }
+        input[type="checkbox"] {
+            margin-right: 5px;
+        }
+        select {
+            width: 100%;
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="controls-panel">
+        <div class="panel-header">
+            <h2>🌬️ Wind Turbine Controls</h2>
+            <button class="minimize-btn" id="minimize-btn">+</button>
+        </div>
+        <div id="controls-content">
+            <div class="control-group">
+                <label>Wind Speed: <span class="value-display" id="wind-speed-value">10.0</span> m/s</label>
+                <input type="range" id="wind-speed" min="0" max="25" value="10" step="0.5">
+            </div>
+            
+            <div class="control-group">
+                <label>Shaft Speed: <span class="value-display" id="shaft-speed-value">10.0</span> RPM</label>
+                <input type="range" id="shaft-speed" min="0" max="20" value="10" step="0.5">
+            </div>
+            
+            <div class="control-group">
+                <label>Blade Pitch: <span class="value-display" id="blade-pitch-value">0.0</span>°</label>
+                <input type="range" id="blade-pitch" min="-10" max="30" value="0" step="1">
+                <div class="info-text">Visual pitch angle</div>
+            </div>
+            
+            <div class="control-group">
+                <label>Number of Blades: <span class="value-display" id="num-blades-value">3</span></label>
+                <input type="range" id="num-blades" min="1" max="20" value="3" step="1">
+            </div>
+            
+            <div class="control-group">
+                <label>Yaw Angle: <span class="value-display" id="yaw-value">0.0</span>°</label>
+                <input type="range" id="yaw" min="-30" max="30" value="0" step="1">
+                <div class="info-text">Nacelle yaw misalignment</div>
+            </div>
+            
+            <div class="control-group">
+                <label>Inflow Angle: <span class="value-display" id="inflow-value">0.0</span>°</label>
+                <input type="range" id="inflow" min="-20" max="20" value="0" step="1">
+                <div class="info-text">Vertical wind component</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="show-axes"> Show Axes (RGB = XYZ)
+                </label>
+                <div class="info-text">Red=X, Green=Y, Blue=Z</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="simple-aero" checked=""> Simple Aerodynamics
+                </label>
+                <div class="info-text">2π lift slope, drag = 10% lift</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="show-vectors"> Show Force Vectors
+                </label>
+            </div>
+            
+            <div class="control-group">
+                <label>Vector Scale: <span class="value-display" id="vector-scale-value">0.100</span></label>
+                <input type="range" id="vector-scale" min="0.001" max="1.0" value="0.1" step="0.001">
+            </div>
+            
+            <div class="control-group">
+                <label>Vector Display:</label>
+                <select id="vector-mode">
+                    <option value="all">All Blades</option>
+                    <option value="single">Single Blade</option>
+                </select>
+            </div>
+        </div>
+    </div>
+    
+    <div id="stats">
+        <h3>📊 Statistics</h3>
+        <div class="stat-row">
+            <span class="stat-label">Max Load:</span>
+            <span class="stat-value" id="max-load">73.14</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Avg AoA:</span>
+            <span class="stat-value" id="avg-aoa">44.5</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">Tip Speed:</span>
+            <span class="stat-value" id="tip-speed">20.9</span>
+        </div>
+    </div>
+    
+    <div id="legend">
+        <h3>Load Scale</h3>
+        <div class="legend-gradient"></div>
+        <div class="legend-labels">
+            <span>Low</span>
+            <span>High</span>
+        </div>
+    </div>
+    
+    <div id="plot-panel">
+        <div class="plot-header">
+            <div class="plot-title">📊 Load Traces</div>
+            <button class="minimize-btn" id="minimize-plot-btn">+</button>
+        </div>
+        <div id="plot-content">
+            <div class="plot-controls">
+                <label>Radial Station (% span): <span class="value-display" id="station-value">50</span></label>
+                <input type="range" id="radial-station" min="10" max="95" value="50" step="5">
+            </div>
+            <div class="chart-container">
+                <canvas id="lift-chart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="moment-y-chart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="moment-z-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb);
+        scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(50, 30, 50);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(50, 50, 50);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+        
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(200, 200);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x4a7c59 });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+        
+        // Debug axes
+        const sceneAxes = new THREE.AxesHelper(30);
+        sceneAxes.visible = false;
+        scene.add(sceneAxes);
+        
+        const rotorAxes = new THREE.AxesHelper(25);
+        rotorAxes.visible = false;
+        
+        const nacelleAxes = new THREE.AxesHelper(5);
+        nacelleAxes.visible = false;
+        
+        // Turbine parameters
+        const turbineParams = {
+            windSpeed: 10,
+            shaftSpeed: 10,
+            bladePitch: 0,
+            numBlades: 3,
+            yawAngle: 0,
+            inflowAngle: 0,
+            towerHeight: 30,
+            bladeRadius: 20,
+            hubRadius: 1.5,
+            radialStation: 0.5,  // 0 to 1 (fraction of span)
+            showVectors: false,  // Show force vectors
+            vectorScale: 0.1,    // Force vector scale factor
+            vectorMode: 'all',   // 'all' or 'single' blade
+            simpleAero: true     // Simple aerodynamics (default)
+        };
+        
+        // Data history for plotting
+        const maxDataPoints = 200;
+        const plotData = {
+            time: [],
+            bladeLift: [],
+            bladeMomentY: [],
+            bladeMomentZ: [],
+            totalLift: [],
+            totalMomentY: [],
+            totalMomentZ: []
+        };
+        
+        let timeCounter = 0;
+        
+        function initPlotData() {
+            plotData.time = [];
+            plotData.bladeLift = [];
+            plotData.bladeMomentY = [];
+            plotData.bladeMomentZ = [];
+            plotData.totalLift = [];
+            plotData.totalMomentY = [];
+            plotData.totalMomentZ = [];
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                plotData.bladeLift[i] = [];
+                plotData.bladeMomentY[i] = [];
+                plotData.bladeMomentZ[i] = [];
+            }
+            timeCounter = 0;
+        }
+        
+        initPlotData();
+        
+        // Tower
+        const towerGeometry = new THREE.CylinderGeometry(0.8, 1.2, turbineParams.towerHeight, 16);
+        const towerMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+        const tower = new THREE.Mesh(towerGeometry, towerMaterial);
+        tower.position.y = turbineParams.towerHeight / 2;
+        tower.castShadow = true;
+        scene.add(tower);
+        
+        // Nacelle (rotates for yaw)
+        const nacelleGroup = new THREE.Group();
+        nacelleGroup.position.set(0, turbineParams.towerHeight, 0);
+        scene.add(nacelleGroup);
+        
+        const nacelleGeometry = new THREE.BoxGeometry(4, 2, 2);
+        const nacelleMaterial = new THREE.MeshPhongMaterial({ color: 0xeeeeee });
+        const nacelle = new THREE.Mesh(nacelleGeometry, nacelleMaterial);
+        nacelle.castShadow = true;
+        nacelleGroup.add(nacelle);
+        nacelleGroup.add(nacelleAxes);
+        
+        // Rotor group (contains hub and blades, rotates about X-axis)
+        const rotorGroup = new THREE.Group();
+        rotorGroup.position.x = 2;
+        nacelleGroup.add(rotorGroup);
+        rotorGroup.add(rotorAxes);
+        
+        // Hub
+        const hubGeometry = new THREE.SphereGeometry(turbineParams.hubRadius, 16, 16);
+        const hubMaterial = new THREE.MeshPhongMaterial({ color: 0x888888 });
+        const hub = new THREE.Mesh(hubGeometry, hubMaterial);
+        hub.castShadow = true;
+        rotorGroup.add(hub);
+        
+        // Blades
+        const blades = [];
+        const bladeSegments = [];
+        let forceArrows = [];
+        
+        function createBlade() {
+            const bladeGroup = new THREE.Group();
+            
+            // Pitch group for visual blade pitch
+            const pitchGroup = new THREE.Group();
+            bladeGroup.add(pitchGroup);
+            
+            const numSegments = 100;
+            const segments = [];
+            
+            for (let i = 0; i < numSegments; i++) {
+                const r = turbineParams.hubRadius + (i / numSegments) * (turbineParams.bladeRadius - turbineParams.hubRadius);
+                const nextR = turbineParams.hubRadius + ((i + 1) / numSegments) * (turbineParams.bladeRadius - turbineParams.hubRadius);
+                const segmentLength = nextR - r;
+                
+                const chord = 1.5 * (1 - i / numSegments) + 0.3;
+                
+                const segmentGeometry = new THREE.BoxGeometry(0.2, segmentLength, chord);
+                const segmentMaterial = new THREE.MeshPhongMaterial({ 
+                    color: 0x4444ff,
+                    shininess: 30,
+                    specular: 0x222222
+                });
+                const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
+                
+                segment.position.y = r + segmentLength / 2;
+                segment.castShadow = true;
+                
+                segment.userData.radius = r + segmentLength / 2;
+                segment.userData.chord = chord;
+                
+                pitchGroup.add(segment);
+                segments.push(segment);
+                bladeSegments.push(segment);
+            }
+            
+            bladeGroup.segments = segments;
+            bladeGroup.pitchGroup = pitchGroup;
+            
+            // Rotate blade to extend radially
+            bladeGroup.rotation.y = Math.PI / 2;
+            
+            return bladeGroup;
+        }
+        
+        function updateBladeCount() {
+            blades.forEach(blade => rotorGroup.remove(blade));
+            blades.length = 0;
+            bladeSegments.length = 0;
+            
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                const blade = createBlade();
+                blade.rotation.x = (i * 2 * Math.PI) / turbineParams.numBlades;
+                rotorGroup.add(blade);
+                blades.push(blade);
+            }
+            
+            // Reset plot data when blade count changes
+            initPlotData();
+            if (typeof liftChart !== 'undefined') {
+                rebuildCharts();
+            }
+        }
+        
+        // Color mapping function (enhanced with more stops)
+        function getLoadColor(normalizedLoad) {
+            const colors = [
+                { pos: 0.0, color: new THREE.Color(0x0000ff) },   // Blue
+                { pos: 0.14, color: new THREE.Color(0x0080ff) },  // Light blue
+                { pos: 0.28, color: new THREE.Color(0x00ffff) },  // Cyan
+                { pos: 0.42, color: new THREE.Color(0x00ff00) },  // Green
+                { pos: 0.57, color: new THREE.Color(0xffff00) },  // Yellow
+                { pos: 0.71, color: new THREE.Color(0xff8000) },  // Orange
+                { pos: 0.85, color: new THREE.Color(0xff0000) },  // Red
+                { pos: 1.0, color: new THREE.Color(0x8b0000) }    // Dark red
+            ];
+            
+            for (let i = 0; i < colors.length - 1; i++) {
+                if (normalizedLoad >= colors[i].pos && normalizedLoad <= colors[i + 1].pos) {
+                    const t = (normalizedLoad - colors[i].pos) / (colors[i + 1].pos - colors[i].pos);
+                    return new THREE.Color().lerpColors(colors[i].color, colors[i + 1].color, t);
+                }
+            }
+            return colors[colors.length - 1].color;
+        }
+        
+        // Update blade loads
+        function updateBladeLoads() {
+            const omega = turbineParams.shaftSpeed * 2 * Math.PI / 60;
+            const windSpeed = turbineParams.windSpeed;
+            const yawRadians = turbineParams.yawAngle * Math.PI / 180;
+            const inflowRadians = turbineParams.inflowAngle * Math.PI / 180;
+            
+            // Wind speed components due to yaw
+            const windSpeedAxial = windSpeed * Math.cos(yawRadians);
+            const windSpeedTangential = windSpeed * Math.sin(yawRadians);
+            
+            let maxLoad = -Infinity;
+            let minLoad = Infinity;
+            let totalAoA = 0;
+            let aoaCount = 0;
+            
+            blades.forEach((blade, bladeIndex) => {
+                const azimuth = rotorGroup.rotation.x + (bladeIndex * 2 * Math.PI / turbineParams.numBlades);
+                
+                blade.segments.forEach((segment, segIdx) => {
+                    const r = segment.userData.radius;
+                    const chord = segment.userData.chord;
+                    
+                    // Blade twist (linear from root to tip)
+                    const twist = 15 * (1 - (r - turbineParams.hubRadius) / (turbineParams.bladeRadius - turbineParams.hubRadius));
+                    
+                    // Velocities
+                    const Vt = omega * r + windSpeedTangential * Math.sin(azimuth); // Tangential velocity with yaw effect
+                    
+                    // Normal velocity (axial + induction + yaw cross-flow + vertical wind)
+                    let Vn = -windSpeedAxial * (1 - 0.3); // With induction factor
+                    Vn += windSpeedTangential * Math.cos(azimuth) * 0.5; // Cross-flow effect from yaw
+                    
+                    // Vertical wind component (inflow angle) affects Vn azimuthally
+                    const verticalWindSpeed = turbineParams.windSpeed * Math.sin(inflowRadians);
+                    Vn += verticalWindSpeed * Math.sin(azimuth); // Azimuthal variation from vertical wind
+                    
+                    // Flow angle and angle of attack
+                    const phi = Math.atan2(Vn, Vt);
+                    const aoa = -(phi * 180 / Math.PI - twist + turbineParams.bladePitch);
+                    
+                    totalAoA += aoa;
+                    aoaCount++;
+                    
+                    // Dynamic pressure
+                    const V = Math.sqrt(Vt * Vt + Vn * Vn);
+                    const q = 0.5 * 1.225 * V * V * chord * (turbineParams.bladeRadius / 100);
+                    
+                    // Aerodynamic forces
+                    let L, D;
+                    if (turbineParams.simpleAero) {
+                        // Simple aerodynamics: 2π lift slope, drag = 10% lift
+                        const Cl = 2 * Math.PI * Math.sin(aoa * Math.PI / 180);
+                        L = q * Cl;
+                        D = 0.1 * Math.abs(L);
+                    } else {
+                        // Advanced aerodynamics with stall model
+                        const Cl = 2 * Math.PI * Math.sin(aoa * Math.PI / 180) * (aoa < 12 ? 1 : Math.max(0, 1 - (aoa - 12) / 8));
+                        const Cd = 0.01 + 0.1 * Math.pow(Math.max(0, aoa - 5) / 10, 2);
+                        L = q * Cl;
+                        D = q * Cd;
+                    }
+                    
+                    // Thrust (axial force)
+                    const thrust = L * Math.cos(phi) + D * Math.sin(phi);
+                    
+                    // Store values
+                    const load = Math.abs(thrust);
+                    segment.userData.load = load;
+                    segment.userData.aoa = aoa;
+                    segment.userData.azimuth = azimuth;
+                    segment.userData.thrust = thrust;
+                    
+                    if (load > maxLoad) maxLoad = load;
+                    if (load < minLoad) minLoad = load;
+                });
+            });
+            
+            // Update force vectors visualization - show as load distribution
+            if (turbineParams.showVectors) {
+                forceArrows.forEach(arrow => scene.remove(arrow));
+                forceArrows = [];
+                
+                blades.forEach((blade, bladeIndex) => {
+                    // Skip blades if single blade mode
+                    if (turbineParams.vectorMode === 'single' && bladeIndex !== 0) return;
+                    
+                    const points = [];
+                    const basePoints = [];
+                    
+                    // Collect points for load distribution curve
+                    blade.segments.forEach((segment, segIdx) => {
+                        const thrust = segment.userData.thrust || 0;
+                        
+                        // Get segment world position (base of vector)
+                        const worldPos = new THREE.Vector3();
+                        segment.getWorldPosition(worldPos);
+                        basePoints.push(worldPos.clone());
+                        
+                        // Thrust direction is along +X axis (downstream, away from wind)
+                        const thrustDir = new THREE.Vector3(1, 0, 0);
+                        thrustDir.applyQuaternion(segment.getWorldQuaternion(new THREE.Quaternion()));
+                        
+                        // Scale vector by thrust magnitude and scale factor
+                        const vectorLength = thrust * turbineParams.vectorScale;
+                        const tipPos = worldPos.clone().add(thrustDir.multiplyScalar(vectorLength));
+                        points.push(tipPos);
+                    });
+                    
+                    // Create lines from base to tip for each segment
+                    for (let i = 0; i < points.length; i++) {
+                        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+                            basePoints[i],
+                            points[i]
+                        ]);
+                        const lineMaterial = new THREE.LineBasicMaterial({ 
+                            color: 0xff0000,
+                            linewidth: 1,
+                            transparent: true,
+                            opacity: 0.6
+                        });
+                        const line = new THREE.Line(lineGeometry, lineMaterial);
+                        scene.add(line);
+                        forceArrows.push(line);
+                    }
+                    
+                    // Create curve connecting all tips (load distribution envelope)
+                    if (points.length > 1) {
+                        const curveGeometry = new THREE.BufferGeometry().setFromPoints(points);
+                        const curveMaterial = new THREE.LineBasicMaterial({ 
+                            color: 0xff0000,
+                            linewidth: 2
+                        });
+                        const curve = new THREE.Line(curveGeometry, curveMaterial);
+                        scene.add(curve);
+                        forceArrows.push(curve);
+                    }
+                });
+            } else {
+                // Hide vectors if disabled
+                forceArrows.forEach(arrow => scene.remove(arrow));
+                forceArrows = [];
+            }
+            
+            // Autoscale and color segments
+            const loadRange = maxLoad - minLoad;
+            bladeSegments.forEach(segment => {
+                const normalizedLoad = loadRange > 0 ? (segment.userData.load - minLoad) / loadRange : 0;
+                const color = getLoadColor(normalizedLoad);
+                segment.material.color = color;
+            });
+            
+            // Update stats (dimensionless)
+            document.getElementById('max-load').textContent = maxLoad.toFixed(2);
+            document.getElementById('avg-aoa').textContent = (totalAoA / aoaCount).toFixed(1);
+            const tipSpeed = (turbineParams.shaftSpeed * 2 * Math.PI / 60) * turbineParams.bladeRadius;
+            document.getElementById('tip-speed').textContent = tipSpeed.toFixed(1);
+            
+            // Update plot data
+            if (omega > 0) {
+                const rotationPeriod = (2 * Math.PI) / omega * 60; // frames per rotation at 60fps
+                if (timeCounter % Math.max(1, Math.floor(rotationPeriod / 50)) === 0) {
+                    updatePlotData(omega);
+                }
+            }
+        }
+        
+        // Update plot data
+        function updatePlotData(omega) {
+            const targetRadius = turbineParams.radialStation * turbineParams.bladeRadius;
+            const bladeLifts = [];
+            const bladeMomentsY = [];
+            const bladeMomentsZ = [];
+            let totalLift = 0;
+            let totalMomentY = 0;  // Vertical bending moment (nodding)
+            let totalMomentZ = 0;  // Horizontal bending moment (yawing)
+            
+            blades.forEach((blade, bladeIndex) => {
+                const azimuth = rotorGroup.rotation.x + (bladeIndex * 2 * Math.PI / turbineParams.numBlades);
+                
+                // Find segment closest to target radius
+                let closestSegment = null;
+                let minDist = Infinity;
+                blade.segments.forEach(segment => {
+                    const dist = Math.abs(segment.userData.radius - targetRadius);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestSegment = segment;
+                    }
+                });
+                
+                if (closestSegment) {
+                    const thrust = closestSegment.userData.thrust || 0;
+                    bladeLifts.push(thrust);
+                    
+                    // Bending moment in non-rotating frame
+                    // Each blade creates a moment about the tower base
+                    const momentArm = closestSegment.userData.radius;
+                    
+                    // Decompose into fixed frame components
+                    const momentY = thrust * momentArm * Math.sin(azimuth);  // Fore-aft (vertical plane / nodding)
+                    const momentZ = thrust * momentArm * Math.cos(azimuth);  // Side-to-side (horizontal plane / yawing)
+                    
+                    bladeMomentsY.push(momentY);
+                    bladeMomentsZ.push(momentZ);
+                    
+                    totalLift += thrust;
+                    totalMomentY += momentY;
+                    totalMomentZ += momentZ;
+                } else {
+                    bladeLifts.push(0);
+                    bladeMomentsY.push(0);
+                    bladeMomentsZ.push(0);
+                }
+            });
+            
+            // Store data
+            plotData.time.push(timeCounter);
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                if (plotData.bladeLift[i]) {
+                    plotData.bladeLift[i].push(bladeLifts[i] || 0);
+                    plotData.bladeMomentY[i].push(bladeMomentsY[i] || 0);
+                    plotData.bladeMomentZ[i].push(bladeMomentsZ[i] || 0);
+                }
+            }
+            plotData.totalLift.push(totalLift);
+            plotData.totalMomentY.push(totalMomentY);
+            plotData.totalMomentZ.push(totalMomentZ);
+            
+            // Limit data points
+            if (plotData.time.length > maxDataPoints) {
+                plotData.time.shift();
+                plotData.bladeLift.forEach(arr => arr.shift());
+                plotData.bladeMomentY.forEach(arr => arr.shift());
+                plotData.bladeMomentZ.forEach(arr => arr.shift());
+                plotData.totalLift.shift();
+                plotData.totalMomentY.shift();
+                plotData.totalMomentZ.shift();
+            }
+            
+            timeCounter++;
+            
+            // Update charts
+            updateCharts();
+        }
+        
+        // Update chart displays
+        function updateCharts() {
+            if (plotData.bladeLift.length !== turbineParams.numBlades) {
+                // Data arrays don't match blade count, skip update
+                return;
+            }
+            
+            // Update lift chart
+            liftChart.data.labels = plotData.time;
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                if (liftChart.data.datasets[i] && plotData.bladeLift[i]) {
+                    liftChart.data.datasets[i].data = plotData.bladeLift[i];
+                }
+            }
+            if (liftChart.data.datasets[turbineParams.numBlades]) {
+                liftChart.data.datasets[turbineParams.numBlades].data = plotData.totalLift;
+            }
+            liftChart.update('none');
+            
+            // Update moment Y chart (nodding)
+            momentYChart.data.labels = plotData.time;
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                if (momentYChart.data.datasets[i] && plotData.bladeMomentY[i]) {
+                    momentYChart.data.datasets[i].data = plotData.bladeMomentY[i];
+                }
+            }
+            if (momentYChart.data.datasets[turbineParams.numBlades]) {
+                momentYChart.data.datasets[turbineParams.numBlades].data = plotData.totalMomentY;
+            }
+            momentYChart.update('none');
+            
+            // Update moment Z chart (yawing)
+            momentZChart.data.labels = plotData.time;
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                if (momentZChart.data.datasets[i] && plotData.bladeMomentZ[i]) {
+                    momentZChart.data.datasets[i].data = plotData.bladeMomentZ[i];
+                }
+            }
+            if (momentZChart.data.datasets[turbineParams.numBlades]) {
+                momentZChart.data.datasets[turbineParams.numBlades].data = plotData.totalMomentZ;
+            }
+            momentZChart.update('none');
+        }
+        
+        // Rebuild charts when blade count changes
+        function rebuildCharts() {
+            chartDatasets = createChartDatasets();
+            
+            // Completely rebuild lift chart
+            liftChart.data.datasets = chartDatasets.liftDatasets;
+            liftChart.data.labels = [];
+            liftChart.update('reset');
+            
+            // Completely rebuild moment Y chart
+            momentYChart.data.datasets = chartDatasets.momentYDatasets;
+            momentYChart.data.labels = [];
+            momentYChart.update('reset');
+            
+            // Completely rebuild moment Z chart
+            momentZChart.data.datasets = chartDatasets.momentZDatasets;
+            momentZChart.data.labels = [];
+            momentZChart.update('reset');
+        }
+        
+        // Create chart datasets
+        function createChartDatasets() {
+            const colors = [
+                'rgb(255, 99, 132)',
+                'rgb(54, 162, 235)',
+                'rgb(75, 192, 192)',
+                'rgb(255, 206, 86)',
+                'rgb(153, 102, 255)',
+                'rgb(255, 159, 64)',
+                'rgb(199, 199, 199)',
+                'rgb(83, 102, 255)',
+                'rgb(255, 99, 255)',
+                'rgb(99, 255, 132)',
+                'rgb(255, 132, 99)',
+                'rgb(132, 99, 255)',
+                'rgb(99, 255, 255)',
+                'rgb(255, 255, 99)',
+                'rgb(192, 75, 192)',
+                'rgb(75, 192, 75)',
+                'rgb(192, 192, 75)',
+                'rgb(75, 75, 192)',
+                'rgb(192, 75, 75)',
+                'rgb(128, 128, 128)'
+            ];
+            
+            const liftDatasets = [];
+            const momentYDatasets = [];
+            const momentZDatasets = [];
+            
+            // Individual blade datasets
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                liftDatasets.push({
+                    label: `Blade ${i + 1} Thrust`,
+                    data: [],
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length],
+                    borderWidth: 1,
+                    pointRadius: 0
+                });
+                
+                momentYDatasets.push({
+                    label: `Blade ${i + 1} My`,
+                    data: [],
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length],
+                    borderWidth: 1,
+                    pointRadius: 0
+                });
+                
+                momentZDatasets.push({
+                    label: `Blade ${i + 1} Mz`,
+                    data: [],
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length],
+                    borderWidth: 1,
+                    pointRadius: 0
+                });
+            }
+            
+            // Total datasets
+            liftDatasets.push({
+                label: 'Total Thrust',
+                data: [],
+                borderColor: 'rgb(0, 0, 0)',
+                backgroundColor: 'rgb(0, 0, 0)',
+                borderWidth: 2,
+                pointRadius: 0
+            });
+            
+            momentYDatasets.push({
+                label: 'Total My',
+                data: [],
+                borderColor: 'rgb(0, 0, 0)',
+                backgroundColor: 'rgb(0, 0, 0)',
+                borderWidth: 2,
+                pointRadius: 0
+            });
+            
+            momentZDatasets.push({
+                label: 'Total Mz',
+                data: [],
+                borderColor: 'rgb(0, 0, 0)',
+                backgroundColor: 'rgb(0, 0, 0)',
+                borderWidth: 2,
+                pointRadius: 0
+            });
+            
+            return { liftDatasets, momentYDatasets, momentZDatasets };
+        }
+        
+        // Initialize charts
+        let chartDatasets = createChartDatasets();
+        
+        const liftChartCtx = document.getElementById('lift-chart').getContext('2d');
+        let liftChart = new Chart(liftChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: chartDatasets.liftDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Blade Thrust'
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Thrust'
+                        }
+                    }
+                }
+            }
+        });
+        
+        const momentYChartCtx = document.getElementById('moment-y-chart').getContext('2d');
+        let momentYChart = new Chart(momentYChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: chartDatasets.momentYDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Nodding Moment (My)'
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Moment Y'
+                        }
+                    }
+                }
+            }
+        });
+        
+        const momentZChartCtx = document.getElementById('moment-z-chart').getContext('2d');
+        let momentZChart = new Chart(momentZChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: chartDatasets.momentZDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Yawing Moment (Mz)'
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Moment Z'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Now that charts are initialized, create the initial blades
+        updateBladeCount();
+        
+        // Event listeners
+        document.getElementById('wind-speed').addEventListener('input', (e) => {
+            turbineParams.windSpeed = parseFloat(e.target.value);
+            document.getElementById('wind-speed-value').textContent = turbineParams.windSpeed.toFixed(1);
+        });
+        
+        document.getElementById('shaft-speed').addEventListener('input', (e) => {
+            turbineParams.shaftSpeed = parseFloat(e.target.value);
+            document.getElementById('shaft-speed-value').textContent = turbineParams.shaftSpeed.toFixed(1);
+        });
+        
+        document.getElementById('blade-pitch').addEventListener('input', (e) => {
+            turbineParams.bladePitch = parseFloat(e.target.value);
+            document.getElementById('blade-pitch-value').textContent = turbineParams.bladePitch.toFixed(1);
+            // Update visual blade pitch
+            blades.forEach(blade => {
+                blade.pitchGroup.rotation.y = turbineParams.bladePitch * Math.PI / 180;
+            });
+        });
+        
+        document.getElementById('num-blades').addEventListener('input', (e) => {
+            turbineParams.numBlades = parseInt(e.target.value);
+            document.getElementById('num-blades-value').textContent = turbineParams.numBlades;
+            updateBladeCount();
+        });
+        
+        document.getElementById('yaw').addEventListener('input', (e) => {
+            turbineParams.yawAngle = parseFloat(e.target.value);
+            document.getElementById('yaw-value').textContent = turbineParams.yawAngle.toFixed(1);
+            nacelleGroup.rotation.y = turbineParams.yawAngle * Math.PI / 180;
+        });
+        
+        document.getElementById('inflow').addEventListener('input', (e) => {
+            turbineParams.inflowAngle = parseFloat(e.target.value);
+            document.getElementById('inflow-value').textContent = turbineParams.inflowAngle.toFixed(1);
+        });
+        
+        document.getElementById('show-axes').addEventListener('change', (e) => {
+            const show = e.target.checked;
+            sceneAxes.visible = show;
+            rotorAxes.visible = show;
+            nacelleAxes.visible = show;
+        });
+        
+        document.getElementById('simple-aero').addEventListener('change', (e) => {
+            turbineParams.simpleAero = e.target.checked;
+        });
+        
+        document.getElementById('show-vectors').addEventListener('change', (e) => {
+            turbineParams.showVectors = e.target.checked;
+        });
+        
+        document.getElementById('vector-mode').addEventListener('change', (e) => {
+            turbineParams.vectorMode = e.target.value;
+            console.log('Vector mode changed to:', turbineParams.vectorMode);
+        });
+        
+        document.getElementById('vector-scale').addEventListener('input', (e) => {
+            turbineParams.vectorScale = parseFloat(e.target.value);
+            document.getElementById('vector-scale-value').textContent = turbineParams.vectorScale.toFixed(3);
+        });
+        
+        // Radial station control
+        document.getElementById('radial-station').addEventListener('input', (e) => {
+            const percent = parseInt(e.target.value);
+            turbineParams.radialStation = percent / 100;
+            document.getElementById('station-value').textContent = percent;
+            // Reset plot data when station changes
+            initPlotData();
+            rebuildCharts();
+            // Reset arrays
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                plotData.bladeLift[i] = [];
+                plotData.bladeMomentY[i] = [];
+                plotData.bladeMomentZ[i] = [];
+            }
+            timeCounter = 0;
+        });
+        
+        // Make panels draggable
+        function makeDraggable(element) {
+            let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+            
+            element.onmousedown = dragMouseDown;
+            
+            function dragMouseDown(e) {
+                e.preventDefault();
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                document.onmouseup = closeDragElement;
+                document.onmousemove = elementDrag;
+            }
+            
+            function elementDrag(e) {
+                e.preventDefault();
+                pos1 = pos3 - e.clientX;
+                pos2 = pos4 - e.clientY;
+                pos3 = e.clientX;
+                pos4 = e.clientY;
+                element.style.top = (element.offsetTop - pos2) + "px";
+                element.style.left = (element.offsetLeft - pos1) + "px";
+            }
+            
+            function closeDragElement() {
+                document.onmouseup = null;
+                document.onmousemove = null;
+            }
+        }
+        
+        makeDraggable(document.getElementById('controls-panel'));
+        makeDraggable(document.getElementById('stats'));
+        makeDraggable(document.getElementById('legend'));
+        makeDraggable(document.getElementById('plot-panel'));
+        
+        // Minimize controls panel
+        document.getElementById('minimize-btn').addEventListener('click', () => {
+            const panel = document.getElementById('controls-panel');
+            const btn = document.getElementById('minimize-btn');
+            panel.classList.toggle('minimized');
+            btn.textContent = panel.classList.contains('minimized') ? '+' : '−';
+        });
+        
+        // Minimize plot panel
+        document.getElementById('minimize-plot-btn').addEventListener('click', () => {
+            const panel = document.getElementById('plot-panel');
+            const btn = document.getElementById('minimize-plot-btn');
+            panel.classList.toggle('minimized');
+            btn.textContent = panel.classList.contains('minimized') ? '+' : '−';
+        });
+        
+        // Window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotate rotor
+            const deltaRotation = (turbineParams.shaftSpeed * 2 * Math.PI) / (60 * 60); // per frame at 60fps
+            rotorGroup.rotation.x += deltaRotation;
+            
+            // Update blade loads
+            updateBladeLoads();
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+    </script>
+
+
+</body></html>
