@@ -400,13 +400,15 @@
             bloomThreshold: 0.85,
             bokehFocusNear: 15,
             bokehFocusFar: 80,
-            bokehAperture: 0.00005,  // Reduced for less blur
-            bokehMaxBlur: 0.003,      // Reduced for less blur
+            bokehAperture: 0.00001,   // Minimal blur
+            bokehMaxBlur: 0.0005,     // Almost no blur
+            useBokeh: false,          // Disable bokeh by default
         };
         
         let isPhotoMode = false;
         let composer = null, renderPass = null, bloomPass = null, bokehPass = null, fxaaPass = null;
         let pmremGen = null, envMap = null;
+        let skyboxMesh = null;  // For scalable background
         
         // remember "simple" look to restore
         const OriginalLook = {
@@ -818,7 +820,24 @@
                 const tex = pmremGen.fromEquirectangular(hdr).texture;
                 envMap = tex;
                 scene.environment = envMap;
-                scene.background = envMap; // cinematic skybox
+                
+                // Create scalable skybox sphere instead of flat background
+                scene.background = new THREE.Color(0x87ceeb); // Keep simple blue
+                
+                // Create large sphere for skybox that can scale with zoom
+                if (!skyboxMesh) {
+                    const skyGeo = new THREE.SphereGeometry(500, 60, 40);
+                    const skyMat = new THREE.MeshBasicMaterial({
+                        map: tex,
+                        side: THREE.BackSide,
+                        transparent: true,
+                        opacity: 0.8
+                    });
+                    skyboxMesh = new THREE.Mesh(skyGeo, skyMat);
+                    skyboxMesh.renderOrder = -1; // Render first
+                    scene.add(skyboxMesh);
+                }
+                
                 hdr.dispose();
             });
 
@@ -860,12 +879,15 @@
             );
             composer.addPass(bloomPass);
 
-            bokehPass = new THREE.BokehPass(scene, camera, {
-                focus: PhotoConfig.bokehFocusFar,
-                aperture: PhotoConfig.bokehAperture,
-                maxblur: PhotoConfig.bokehMaxBlur
-            });
-            composer.addPass(bokehPass);
+            // Only add bokeh if enabled (reduces background blur)
+            if (PhotoConfig.useBokeh) {
+                bokehPass = new THREE.BokehPass(scene, camera, {
+                    focus: PhotoConfig.bokehFocusFar,
+                    aperture: PhotoConfig.bokehAperture,
+                    maxblur: PhotoConfig.bokehMaxBlur
+                });
+                composer.addPass(bokehPass);
+            }
 
             fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
             fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
@@ -887,10 +909,17 @@
             // Restore simple light intensity
             directionalLight.intensity = OriginalLook.dirLightIntensity;
 
-            // Restore background/fog
+            // Restore background/fog and remove skybox
             scene.environment = null;
             scene.background = OriginalLook.background || new THREE.Color(0x87ceeb);
             scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
+            
+            if (skyboxMesh) {
+                scene.remove(skyboxMesh);
+                skyboxMesh.geometry.dispose();
+                skyboxMesh.material.dispose();
+                skyboxMesh = null;
+            }
 
             // Restore original materials
             forEachMesh((m)=>{
@@ -1417,14 +1446,19 @@
             // Update blade loads
             updateBladeLoads();
             
-            // Adjust background/environment intensity based on camera distance in photo mode
-            if (isPhotoMode && scene.background && scene.background.isTexture) {
+            // Scale skybox with camera distance in photo mode
+            if (isPhotoMode && skyboxMesh) {
                 const camDist = camera.position.length();
-                const distanceScale = THREE.MathUtils.clamp(camDist / 50, 0.5, 2.0);
-                // Adjust material env map intensity based on zoom
+                // Scale skybox to maintain visual size relative to camera
+                const scale = camDist / 50; // Base distance is 50
+                skyboxMesh.scale.setScalar(scale);
+                skyboxMesh.position.copy(camera.position); // Keep centered on camera
+                
+                // Adjust material env map intensity
+                const intensityScale = THREE.MathUtils.clamp(scale, 0.6, 1.5);
                 bladeSegments.forEach(seg => {
                     if (seg.material.envMapIntensity !== undefined) {
-                        seg.material.envMapIntensity = distanceScale;
+                        seg.material.envMapIntensity = intensityScale;
                     }
                 });
             }
