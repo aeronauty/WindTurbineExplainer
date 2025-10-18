@@ -29,7 +29,6 @@
             max-width: 350px;
             max-height: 90vh;
             overflow-y: auto;
-            cursor: move;
         }
         #controls-panel.minimized #controls-content {
             display: none;
@@ -95,7 +94,6 @@
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             min-width: 200px;
-            cursor: move;
         }
         #stats h3 {
             margin-bottom: 10px;
@@ -127,7 +125,6 @@
             padding: 15px;
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            cursor: move;
         }
         #legend h3 {
             margin-bottom: 10px;
@@ -159,7 +156,9 @@
             width: 600px;
             max-height: 500px;
             overflow-y: auto;
-            cursor: move;
+        }
+        #plot-panel.minimized {
+            max-height: none;
         }
         #plot-panel.minimized #plot-content {
             display: none;
@@ -702,8 +701,10 @@
             
             // Update plot data
             if (omega > 0) {
+                timeCounter++;
                 const rotationPeriod = (2 * Math.PI) / omega * 60; // frames per rotation at 60fps
-                if (timeCounter % Math.max(1, Math.floor(rotationPeriod / 50)) === 0) {
+                const updateInterval = Math.max(1, Math.floor(rotationPeriod / 50));
+                if (timeCounter % updateInterval === 0) {
                     updatePlotData(omega);
                 }
             }
@@ -781,8 +782,6 @@
                 plotData.totalMomentY.shift();
                 plotData.totalMomentZ.shift();
             }
-            
-            timeCounter++;
             
             // Update charts
             updateCharts();
@@ -1132,13 +1131,23 @@
             timeCounter = 0;
         });
         
-        // Make panels draggable
-        function makeDraggable(element) {
+        // Make panels draggable (only by their headers)
+        function makeDraggable(element, handleSelector) {
             let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
             
-            element.onmousedown = dragMouseDown;
+            // Get the header element if selector provided, otherwise use the whole element
+            const handle = handleSelector ? element.querySelector(handleSelector) : element;
+            
+            if (handle) {
+                handle.onmousedown = dragMouseDown;
+                handle.style.cursor = 'move';
+            }
             
             function dragMouseDown(e) {
+                // Don't drag if clicking on a button
+                if (e.target.tagName === 'BUTTON') {
+                    return;
+                }
                 e.preventDefault();
                 pos3 = e.clientX;
                 pos4 = e.clientY;
@@ -1162,10 +1171,10 @@
             }
         }
         
-        makeDraggable(document.getElementById('controls-panel'));
-        makeDraggable(document.getElementById('stats'));
-        makeDraggable(document.getElementById('legend'));
-        makeDraggable(document.getElementById('plot-panel'));
+        makeDraggable(document.getElementById('controls-panel'), '.panel-header');
+        makeDraggable(document.getElementById('stats'), 'h3');
+        makeDraggable(document.getElementById('legend'), 'h3');
+        makeDraggable(document.getElementById('plot-panel'), '.plot-header');
         
         // Minimize controls panel
         document.getElementById('minimize-btn').addEventListener('click', () => {
