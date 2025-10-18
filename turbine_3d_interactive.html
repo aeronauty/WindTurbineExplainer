@@ -259,6 +259,13 @@
             
             <div class="control-group">
                 <label>
+                    <input type="checkbox" id="show-heatmap" checked=""> Show Load Heatmap
+                </label>
+                <div class="info-text">Color-coded blade loads</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
                     <input type="checkbox" id="show-vectors"> Show Force Vectors
                 </label>
             </div>
@@ -393,6 +400,8 @@
             bloomThreshold: 0.85,
             bokehFocusNear: 15,
             bokehFocusFar: 80,
+            bokehAperture: 0.00005,  // Reduced for less blur
+            bokehMaxBlur: 0.003,      // Reduced for less blur
         };
         
         let isPhotoMode = false;
@@ -427,7 +436,8 @@
             showVectors: false,  // Show force vectors
             vectorScale: 0.1,    // Force vector scale factor
             vectorMode: 'all',   // 'all' or 'single' blade
-            simpleAero: true     // Simple aerodynamics (default)
+            simpleAero: true,    // Simple aerodynamics (default)
+            showHeatmap: true    // Show load heatmap on blades
         };
         
         // Data history for plotting
@@ -746,16 +756,27 @@
             // Autoscale and color segments
             const loadRange = maxLoad - minLoad;
             bladeSegments.forEach(segment => {
-                const normalizedLoad = loadRange > 0 ? (segment.userData.load - minLoad) / loadRange : 0;
-                const color = getLoadColor(normalizedLoad);
-                if (isPhotoMode){
-                    // tint base color slightly + glow with emissive
-                    segment.material.color.lerp(color, 0.35);
-                    if (segment.material.emissive) {
-                        segment.material.emissive.lerp(color, 0.6);
+                if (turbineParams.showHeatmap) {
+                    const normalizedLoad = loadRange > 0 ? (segment.userData.load - minLoad) / loadRange : 0;
+                    const color = getLoadColor(normalizedLoad);
+                    if (isPhotoMode){
+                        // tint base color slightly + glow with emissive
+                        segment.material.color.lerp(color, 0.35);
+                        if (segment.material.emissive) {
+                            segment.material.emissive.lerp(color, 0.6);
+                        }
+                    } else {
+                        segment.material.color = color.clone ? color.clone() : color;
                     }
                 } else {
-                    segment.material.color = color.clone ? color.clone() : color;
+                    // Reset to neutral color when heatmap is off
+                    const neutralColor = new THREE.Color(0xcccccc);
+                    if (isPhotoMode && segment.material.emissive) {
+                        segment.material.color.copy(neutralColor);
+                        segment.material.emissive.set(0x000000);
+                    } else {
+                        segment.material.color.copy(neutralColor);
+                    }
                 }
             });
             
@@ -841,8 +862,8 @@
 
             bokehPass = new THREE.BokehPass(scene, camera, {
                 focus: PhotoConfig.bokehFocusFar,
-                aperture: 0.00015,
-                maxblur: 0.01
+                aperture: PhotoConfig.bokehAperture,
+                maxblur: PhotoConfig.bokehMaxBlur
             });
             composer.addPass(bokehPass);
 
@@ -1276,6 +1297,10 @@
             turbineParams.simpleAero = e.target.checked;
         });
         
+        document.getElementById('show-heatmap').addEventListener('change', (e) => {
+            turbineParams.showHeatmap = e.target.checked;
+        });
+        
         document.getElementById('show-vectors').addEventListener('change', (e) => {
             turbineParams.showVectors = e.target.checked;
         });
@@ -1391,6 +1416,18 @@
             
             // Update blade loads
             updateBladeLoads();
+            
+            // Adjust background/environment intensity based on camera distance in photo mode
+            if (isPhotoMode && scene.background && scene.background.isTexture) {
+                const camDist = camera.position.length();
+                const distanceScale = THREE.MathUtils.clamp(camDist / 50, 0.5, 2.0);
+                // Adjust material env map intensity based on zoom
+                bladeSegments.forEach(seg => {
+                    if (seg.material.envMapIntensity !== undefined) {
+                        seg.material.envMapIntensity = distanceScale;
+                    }
+                });
+            }
             
             controls.update();
             if (composer && isPhotoMode) composer.render(); else renderer.render(scene, camera);
