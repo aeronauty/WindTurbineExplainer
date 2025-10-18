@@ -15,12 +15,66 @@ function App() {
   const [numBlades, setNumBlades] = useState(3);
   const [phaseShift, setPhaseShift] = useState(0);
   const [resolution, setResolution] = useState(360);
+  const [subtractMean, setSubtractMean] = useState(false);
 
   // Generate data
   const generateData = (): { sinData: DataPoint[], sin2Data: DataPoint[] } => {
     const sinData: DataPoint[] = [];
     const sin2Data: DataPoint[] = [];
 
+    // First pass: collect all data and calculate sums
+    const bladeDataSin: number[][] = [];
+    const bladeDataSin2: number[][] = [];
+    const sinSums: number[] = [];
+    const sin2Sums: number[] = [];
+
+    for (let i = 0; i < resolution; i++) {
+      sinSums.push(0);
+      sin2Sums.push(0);
+    }
+
+    // Generate data for each blade
+    for (let b = 0; b < numBlades; b++) {
+      const bladeSin: number[] = [];
+      const bladeSin2: number[] = [];
+      
+      for (let i = 0; i < resolution; i++) {
+        const theta = (2 * Math.PI * i) / resolution;
+        const phase = phaseShift + (2 * Math.PI * b) / numBlades;
+        const sinValue = Math.sin(theta + phase);
+        const sin2Value = Math.pow(Math.sin(theta + phase), 2);
+
+        bladeSin.push(sinValue);
+        bladeSin2.push(sin2Value);
+        sinSums[i] += sinValue;
+        sin2Sums[i] += sin2Value;
+      }
+      
+      bladeDataSin.push(bladeSin);
+      bladeDataSin2.push(bladeSin2);
+    }
+
+    // Calculate means over the rotation if subtractMean is enabled
+    const sinBladeMeans: number[] = [];
+    const sin2BladeMeans: number[] = [];
+    let sinSumMean = 0;
+    let sin2SumMean = 0;
+
+    if (subtractMean) {
+      // Calculate mean for each blade
+      for (let b = 0; b < numBlades; b++) {
+        const sinMean = bladeDataSin[b].reduce((sum, val) => sum + val, 0) / resolution;
+        const sin2Mean = bladeDataSin2[b].reduce((sum, val) => sum + val, 0) / resolution;
+        sinBladeMeans.push(sinMean);
+        sin2BladeMeans.push(sin2Mean);
+      }
+      
+      // Calculate mean for the sum
+      sinSumMean = sinSums.reduce((sum, val) => sum + val, 0) / resolution;
+      sin2SumMean = sin2Sums.reduce((sum, val) => sum + val, 0) / resolution;
+    }
+
+    // Second pass: create data points with optional mean subtraction
     for (let i = 0; i < resolution; i++) {
       const theta = (2 * Math.PI * i) / resolution;
       const thetaLabel = (theta / Math.PI).toFixed(2) + 'π';
@@ -28,23 +82,17 @@ function App() {
       const sinPoint: DataPoint = { theta, thetaLabel };
       const sin2Point: DataPoint = { theta, thetaLabel };
 
-      let sinSum = 0;
-      let sin2Sum = 0;
-
       for (let b = 0; b < numBlades; b++) {
-        const phase = phaseShift + (2 * Math.PI * b) / numBlades;
-        const sinValue = Math.sin(theta + phase);
-        const sin2Value = Math.pow(Math.sin(theta + phase), 2);
-
-        sinPoint[`blade${b}`] = sinValue;
-        sin2Point[`blade${b}`] = sin2Value;
-
-        sinSum += sinValue;
-        sin2Sum += sin2Value;
+        sinPoint[`blade${b}`] = subtractMean 
+          ? bladeDataSin[b][i] - sinBladeMeans[b]
+          : bladeDataSin[b][i];
+        sin2Point[`blade${b}`] = subtractMean 
+          ? bladeDataSin2[b][i] - sin2BladeMeans[b]
+          : bladeDataSin2[b][i];
       }
 
-      sinPoint['sum'] = sinSum;
-      sin2Point['sum'] = sin2Sum;
+      sinPoint['sum'] = subtractMean ? sinSums[i] - sinSumMean : sinSums[i];
+      sin2Point['sum'] = subtractMean ? sin2Sums[i] - sin2SumMean : sin2Sums[i];
 
       sinData.push(sinPoint);
       sin2Data.push(sin2Point);
@@ -111,6 +159,17 @@ function App() {
               onChange={(e) => setResolution(parseInt(e.target.value))}
             />
             <span className="value-display">{resolution}</span>
+          </div>
+
+          <div className="control-group">
+            <label htmlFor="subtractMean">Subtract Mean (over rotation):</label>
+            <input
+              type="checkbox"
+              id="subtractMean"
+              checked={subtractMean}
+              onChange={(e) => setSubtractMean(e.target.checked)}
+              style={{ width: 'auto', height: '20px' }}
+            />
           </div>
         </div>
 

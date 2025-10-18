@@ -176,6 +176,11 @@
                 <input type="range" id="resolution" min="100" max="1000" value="360" step="10">
                 <span class="value-display" id="resolutionValue">360</span>
             </div>
+            
+            <div class="control-group">
+                <label for="subtractMean">Subtract Mean (over rotation):</label>
+                <input type="checkbox" id="subtractMean" style="width: auto; height: 20px;">
+            </div>
         </div>
 
         <div class="plot-container">
@@ -205,6 +210,7 @@
         const numBladesSlider = document.getElementById('numBlades');
         const phaseShiftSlider = document.getElementById('phaseShift');
         const resolutionSlider = document.getElementById('resolution');
+        const subtractMeanCheckbox = document.getElementById('subtractMean');
         const numBladesValue = document.getElementById('numBladesValue');
         const phaseShiftValue = document.getElementById('phaseShiftValue');
         const resolutionValue = document.getElementById('resolutionValue');
@@ -216,11 +222,17 @@
             resolutionValue.textContent = resolutionSlider.value;
         }
 
+        // Helper function to calculate mean of an array
+        function calculateMean(arr) {
+            return arr.reduce((sum, val) => sum + val, 0) / arr.length;
+        }
+
         // Generate data for plots
         function generateData() {
             const B = parseInt(numBladesSlider.value);
             const dpsi = parseFloat(phaseShiftSlider.value);
             const resolution = parseInt(resolutionSlider.value);
+            const subtractMean = subtractMeanCheckbox.checked;
             
             // Generate theta values
             const theta = Array.from({length: resolution}, (_, i) => (2 * Math.PI * i) / resolution);
@@ -233,18 +245,52 @@
             const sin2Traces = [];
             
             // Generate data for each blade
+            const bladeDataSin = [];
+            const bladeDataSin2 = [];
+            
             for (let b = 0; b < B; b++) {
                 const phase = dpsi + (2 * Math.PI * b) / B;
                 const sinValues = theta.map(t => Math.sin(t + phase));
                 const sin2Values = theta.map(t => Math.pow(Math.sin(t + phase), 2));
+                
+                // Store blade data for mean calculation
+                bladeDataSin.push(sinValues);
+                bladeDataSin2.push(sin2Values);
                 
                 // Add to sums
                 for (let i = 0; i < resolution; i++) {
                     sinSum[i] += sinValues[i];
                     sin2Sum[i] += sin2Values[i];
                 }
+            }
+            
+            // Calculate means over the rotation if subtract mean is enabled
+            let sinBladeMeans = [];
+            let sin2BladeMeans = [];
+            let sinSumMean = 0;
+            let sin2SumMean = 0;
+            
+            if (subtractMean) {
+                // Calculate mean for each blade
+                for (let b = 0; b < B; b++) {
+                    sinBladeMeans.push(calculateMean(bladeDataSin[b]));
+                    sin2BladeMeans.push(calculateMean(bladeDataSin2[b]));
+                }
                 
-                // Create traces for individual blades
+                // Calculate mean for the sum
+                sinSumMean = calculateMean(sinSum);
+                sin2SumMean = calculateMean(sin2Sum);
+            }
+            
+            // Create traces with or without mean subtraction
+            for (let b = 0; b < B; b++) {
+                const sinValues = subtractMean 
+                    ? bladeDataSin[b].map(v => v - sinBladeMeans[b])
+                    : bladeDataSin[b];
+                const sin2Values = subtractMean 
+                    ? bladeDataSin2[b].map(v => v - sin2BladeMeans[b])
+                    : bladeDataSin2[b];
+                
                 sinTraces.push({
                     x: theta,
                     y: sinValues,
@@ -264,10 +310,17 @@
                 });
             }
             
-            // Add sum traces
+            // Add sum traces with mean subtraction if enabled
+            const finalSinSum = subtractMean 
+                ? sinSum.map(v => v - sinSumMean)
+                : sinSum;
+            const finalSin2Sum = subtractMean 
+                ? sin2Sum.map(v => v - sin2SumMean)
+                : sin2Sum;
+            
             sinTraces.push({
                 x: theta,
-                y: sinSum,
+                y: finalSinSum,
                 mode: 'lines',
                 name: 'Sum',
                 line: {width: 3, color: 'black'},
@@ -276,7 +329,7 @@
             
             sin2Traces.push({
                 x: theta,
-                y: sin2Sum,
+                y: finalSin2Sum,
                 mode: 'lines',
                 name: 'Sum',
                 line: {width: 3, color: 'black'},
@@ -335,6 +388,7 @@
         numBladesSlider.addEventListener('input', updatePlots);
         phaseShiftSlider.addEventListener('input', updatePlots);
         resolutionSlider.addEventListener('input', updatePlots);
+        subtractMeanCheckbox.addEventListener('change', updatePlots);
 
         // Initial plot
         updatePlots();

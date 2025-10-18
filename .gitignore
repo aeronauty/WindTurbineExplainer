@@ -1,0 +1,41 @@
+# Node modules
+node_modules/
+package-lock.json
+
+# Python virtual environment
+venv/
+env/
+*.pyc
+__pycache__/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+
+# Build outputs
+dist/
+build/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Test files
+test_*.js
+test_*.py
+
