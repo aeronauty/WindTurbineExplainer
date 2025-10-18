@@ -245,6 +245,13 @@
             
             <div class="control-group">
                 <label>
+                    <input type="checkbox" id="photo-mode"> Photo Rendering
+                </label>
+                <div class="info-text">HDRI + PBR + bloom/DOF (slower)</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
                     <input type="checkbox" id="simple-aero" checked=""> Simple Aerodynamics
                 </label>
                 <div class="info-text">2π lift slope, drag = 10% lift</div>
@@ -321,6 +328,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    
+    <!-- Photo Rendering Mode Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/pmrem/PMREMGenerator.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/BokehPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FXAAShader.js"></script>
     <script>
         // Scene setup
         const scene = new THREE.Scene();
@@ -333,6 +350,7 @@
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // ready for photo mode
         document.getElementById('canvas-container').appendChild(renderer.domElement);
         
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -366,6 +384,33 @@
         
         const nacelleAxes = new THREE.AxesHelper(5);
         nacelleAxes.visible = false;
+        
+        // --- Photo mode config/state ---
+        const PhotoConfig = {
+            HDRI_URL: "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloppenheim_06_2k.hdr",
+            bloomStrength: 0.35,
+            bloomRadius: 0.8,
+            bloomThreshold: 0.85,
+            bokehFocusNear: 15,
+            bokehFocusFar: 80,
+        };
+        
+        let isPhotoMode = false;
+        let composer = null, renderPass = null, bloomPass = null, bokehPass = null, fxaaPass = null;
+        let pmremGen = null, envMap = null;
+        
+        // remember "simple" look to restore
+        const OriginalLook = {
+            background: scene.background ? scene.background.clone() : null,
+            fog: scene.fog || null,
+            dirLightIntensity: directionalLight.intensity,
+        };
+        
+        // cache original materials to restore later
+        const OriginalMats = new Map(); // mesh => material
+        function cacheMaterial(mesh){
+            if (!OriginalMats.has(mesh)) OriginalMats.set(mesh, mesh.material);
+        }
         
         // Turbine parameters
         const turbineParams = {
@@ -450,10 +495,22 @@
         hub.castShadow = true;
         rotorGroup.add(hub);
         
+        // Cache initial materials for photo mode toggle
+        cacheMaterial(tower);
+        cacheMaterial(nacelle);
+        cacheMaterial(hub);
+        cacheMaterial(ground);
+        
         // Blades
         const blades = [];
         const bladeSegments = [];
         let forceArrows = [];
+        
+        // Helper to iterate all meshes for photo mode
+        function forEachMesh(fn){
+            fn(tower); fn(nacelle); fn(hub); fn(ground);
+            bladeSegments.forEach(fn);
+        }
         
         function createBlade() {
             const bladeGroup = new THREE.Group();
@@ -489,6 +546,7 @@
                 pitchGroup.add(segment);
                 segments.push(segment);
                 bladeSegments.push(segment);
+                cacheMaterial(segment); // Cache for photo mode
             }
             
             bladeGroup.segments = segments;
@@ -690,7 +748,15 @@
             bladeSegments.forEach(segment => {
                 const normalizedLoad = loadRange > 0 ? (segment.userData.load - minLoad) / loadRange : 0;
                 const color = getLoadColor(normalizedLoad);
-                segment.material.color = color;
+                if (isPhotoMode){
+                    // tint base color slightly + glow with emissive
+                    segment.material.color.lerp(color, 0.35);
+                    if (segment.material.emissive) {
+                        segment.material.emissive.lerp(color, 0.6);
+                    }
+                } else {
+                    segment.material.color = color.clone ? color.clone() : color;
+                }
             });
             
             // Update stats (dimensionless)
@@ -708,6 +774,111 @@
                     updatePlotData(omega);
                 }
             }
+        }
+        
+        // Photo Mode Enable/Disable Functions
+        function enablePhotoMode(){
+            if (isPhotoMode) return;
+            isPhotoMode = true;
+
+            // Renderer: physically-correct pipeline
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
+            renderer.physicallyCorrectLights = true;
+
+            // Bigger sun & soft shadows
+            directionalLight.intensity = 3.0;
+            directionalLight.shadow.mapSize.set(2048,2048);
+
+            // HDRI env
+            if (!pmremGen) pmremGen = new THREE.PMREMGenerator(renderer);
+            new THREE.RGBELoader().load(PhotoConfig.HDRI_URL, (hdr)=>{
+                const tex = pmremGen.fromEquirectangular(hdr).texture;
+                envMap = tex;
+                scene.environment = envMap;
+                scene.background = envMap; // cinematic skybox
+                hdr.dispose();
+            });
+
+            // Swap to PBR-ish materials
+            forEachMesh((m)=>{
+                const old = OriginalMats.get(m);
+                if (!old.userData?.__pbrClone){
+                    const pbr = new THREE.MeshPhysicalMaterial({
+                        color: (m===tower||m===nacelle||m===hub) ? 0xd0d5db : (m===ground ? 0x4a7c59 : 0xcccccc),
+                        metalness: (m===tower||m===nacelle||m===hub) ? 0.7 : 0.0,
+                        roughness: (m===tower||m===nacelle||m===hub) ? 0.25 : 0.35,
+                        clearcoat: 0.8, clearcoatRoughness: 0.15,
+                        envMapIntensity: 1.0
+                    });
+                    old.userData = old.userData || {};
+                    old.userData.__pbrClone = pbr;
+                    m.material = pbr;
+                } else {
+                    m.material = old.userData.__pbrClone;
+                }
+            });
+
+            // Keep your load heatmap—use emissive so PBR still reads
+            bladeSegments.forEach(seg=>{
+                seg.material.emissive = new THREE.Color(0x000000);
+                seg.material.emissiveIntensity = 0.6;
+            });
+
+            // Postprocessing stack
+            composer = new THREE.EffectComposer(renderer);
+            renderPass = new THREE.RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            bloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                PhotoConfig.bloomStrength,
+                PhotoConfig.bloomRadius,
+                PhotoConfig.bloomThreshold
+            );
+            composer.addPass(bloomPass);
+
+            bokehPass = new THREE.BokehPass(scene, camera, {
+                focus: PhotoConfig.bokehFocusFar,
+                aperture: 0.00015,
+                maxblur: 0.01
+            });
+            composer.addPass(bokehPass);
+
+            fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+            fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+            composer.addPass(fxaaPass);
+
+            // Optional: lighten fog or remove for hero look
+            scene.fog = null;
+        }
+
+        function disablePhotoMode(){
+            if (!isPhotoMode) return;
+            isPhotoMode = false;
+
+            // Restore renderer defaults
+            renderer.physicallyCorrectLights = false;
+            renderer.toneMapping = THREE.NoToneMapping;
+            renderer.toneMappingExposure = 1.0;
+
+            // Restore simple light intensity
+            directionalLight.intensity = OriginalLook.dirLightIntensity;
+
+            // Restore background/fog
+            scene.environment = null;
+            scene.background = OriginalLook.background || new THREE.Color(0x87ceeb);
+            scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
+
+            // Restore original materials
+            forEachMesh((m)=>{
+                const orig = OriginalMats.get(m);
+                if (orig) m.material = orig;
+            });
+
+            // Kill post stack
+            composer = null; renderPass = null; bloomPass = null; bokehPass = null; fxaaPass = null;
         }
         
         // Update plot data
@@ -1096,6 +1267,11 @@
             nacelleAxes.visible = show;
         });
         
+        document.getElementById('photo-mode').addEventListener('change', (e) => {
+            if (e.target.checked) enablePhotoMode();
+            else disablePhotoMode();
+        });
+        
         document.getElementById('simple-aero').addEventListener('change', (e) => {
             turbineParams.simpleAero = e.target.checked;
         });
@@ -1197,6 +1373,12 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            if (composer){
+                composer.setSize(window.innerWidth, window.innerHeight);
+                if (fxaaPass){
+                    fxaaPass.material.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+                }
+            }
         });
         
         // Animation loop
@@ -1211,8 +1393,38 @@
             updateBladeLoads();
             
             controls.update();
-            renderer.render(scene, camera);
+            if (composer && isPhotoMode) composer.render(); else renderer.render(scene, camera);
         }
+        
+        // Optional cinematic zoom on key 'z'
+        function ease(t){ return t<.5 ? 2*t*t : -1+(4-2*t)*t; }
+        function cinematicZoom(targetPos, lookAt, duration=1200){
+            const start = performance.now();
+            const startPos = camera.position.clone();
+            const startExp = renderer.toneMappingExposure;
+            const startFocus = bokehPass ? bokehPass.materialBokeh.uniforms['focus'].value : PhotoConfig.bokehFocusFar;
+            const endFocus = PhotoConfig.bokehFocusNear;
+            const endExp = 1.25;
+
+            function step(now){
+                const t = Math.min(1, (now-start)/duration), k = ease(t);
+                camera.position.lerpVectors(startPos, targetPos, k);
+                controls.target.lerp(lookAt, k);
+                if (isPhotoMode){
+                    renderer.toneMappingExposure = THREE.MathUtils.lerp(startExp, endExp, k);
+                    if (bokehPass) bokehPass.materialBokeh.uniforms['focus'].value =
+                        THREE.MathUtils.lerp(startFocus, endFocus, k);
+                }
+                if (t<1) requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+        }
+        document.addEventListener('keydown', (e)=>{
+            if (e.key==='z' && hub){
+                const p = new THREE.Vector3(); hub.getWorldPosition(p);
+                cinematicZoom(p.clone().add(new THREE.Vector3(6,2,6)), p);
+            }
+        });
         
         animate();
     </script>
