@@ -814,32 +814,87 @@
             directionalLight.intensity = 3.0;
             directionalLight.shadow.mapSize.set(2048,2048);
 
-            // HDRI env
+            // HDRI env for reflections only
             if (!pmremGen) pmremGen = new THREE.PMREMGenerator(renderer);
             new THREE.RGBELoader().load(PhotoConfig.HDRI_URL, (hdr)=>{
                 const tex = pmremGen.fromEquirectangular(hdr).texture;
                 envMap = tex;
-                scene.environment = envMap;
-                
-                // Create scalable skybox sphere instead of flat background
-                scene.background = new THREE.Color(0x87ceeb); // Keep simple blue
-                
-                // Create large sphere for skybox that can scale with zoom
-                if (!skyboxMesh) {
-                    const skyGeo = new THREE.SphereGeometry(500, 60, 40);
-                    const skyMat = new THREE.MeshBasicMaterial({
-                        map: tex,
-                        side: THREE.BackSide,
-                        transparent: true,
-                        opacity: 0.8
-                    });
-                    skyboxMesh = new THREE.Mesh(skyGeo, skyMat);
-                    skyboxMesh.renderOrder = -1; // Render first
-                    scene.add(skyboxMesh);
-                }
-                
+                scene.environment = envMap; // For reflections on materials
                 hdr.dispose();
             });
+            
+            // Create photorealistic sky gradient
+            const skyGeo = new THREE.SphereGeometry(800, 32, 15);
+            const skyMat = new THREE.ShaderMaterial({
+                uniforms: {
+                    topColor: { value: new THREE.Color(0x0077ff) },      // Blue sky
+                    bottomColor: { value: new THREE.Color(0xe0f0ff) },   // Horizon color
+                    offset: { value: 33 },
+                    exponent: { value: 0.6 }
+                },
+                vertexShader: `
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                        vWorldPosition = worldPosition.xyz;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform vec3 topColor;
+                    uniform vec3 bottomColor;
+                    uniform float offset;
+                    uniform float exponent;
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        float h = normalize(vWorldPosition + offset).y;
+                        gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+                    }
+                `,
+                side: THREE.BackSide
+            });
+            skyboxMesh = new THREE.Mesh(skyGeo, skyMat);
+            skyboxMesh.renderOrder = -1;
+            scene.add(skyboxMesh);
+            
+            // Create rolling hillside terrain
+            const hillGeo = new THREE.PlaneGeometry(800, 800, 50, 50);
+            const vertices = hillGeo.attributes.position.array;
+            
+            // Create rolling hills with multiple waves
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i + 1];
+                const distance = Math.sqrt(x * x + z * z);
+                
+                // Multiple sine waves for natural-looking hills
+                let height = Math.sin(x * 0.01) * 8 + Math.cos(z * 0.012) * 6;
+                height += Math.sin(x * 0.03 + z * 0.02) * 3;
+                height += Math.sin(distance * 0.008) * 10;
+                height -= distance * 0.02; // Gentle slope down
+                
+                vertices[i + 2] = height;
+            }
+            
+            hillGeo.computeVertexNormals();
+            
+            // Grass-colored material with some variation
+            const hillMat = new THREE.MeshStandardMaterial({
+                color: 0x4a7c2f,
+                roughness: 0.9,
+                metalness: 0.0,
+                flatShading: false
+            });
+            
+            const hillMesh = new THREE.Mesh(hillGeo, hillMat);
+            hillMesh.rotation.x = -Math.PI / 2;
+            hillMesh.position.y = -15; // Lower than the ground plane
+            hillMesh.receiveShadow = true;
+            hillMesh.userData.isHillside = true;
+            scene.add(hillMesh);
+            
+            // Hide original ground in photo mode
+            ground.visible = false;
 
             // Swap to PBR-ish materials
             forEachMesh((m)=>{
@@ -914,12 +969,23 @@
             scene.background = OriginalLook.background || new THREE.Color(0x87ceeb);
             scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
             
+            // Remove skybox
             if (skyboxMesh) {
                 scene.remove(skyboxMesh);
                 skyboxMesh.geometry.dispose();
                 skyboxMesh.material.dispose();
                 skyboxMesh = null;
             }
+            
+            // Remove hillside and restore original ground
+            scene.children.forEach(child => {
+                if (child.userData && child.userData.isHillside) {
+                    scene.remove(child);
+                    child.geometry.dispose();
+                    child.material.dispose();
+                }
+            });
+            ground.visible = true;
 
             // Restore original materials
             forEachMesh((m)=>{
@@ -1446,16 +1512,13 @@
             // Update blade loads
             updateBladeLoads();
             
-            // Scale skybox with camera distance in photo mode
+            // Keep sky centered on camera in photo mode
             if (isPhotoMode && skyboxMesh) {
-                const camDist = camera.position.length();
-                // Scale skybox to maintain visual size relative to camera
-                const scale = camDist / 50; // Base distance is 50
-                skyboxMesh.scale.setScalar(scale);
-                skyboxMesh.position.copy(camera.position); // Keep centered on camera
+                skyboxMesh.position.copy(camera.position);
                 
-                // Adjust material env map intensity
-                const intensityScale = THREE.MathUtils.clamp(scale, 0.6, 1.5);
+                // Adjust material env map intensity based on distance
+                const camDist = camera.position.length();
+                const intensityScale = THREE.MathUtils.clamp(camDist / 50, 0.6, 1.5);
                 bladeSegments.forEach(seg => {
                     if (seg.material.envMapIntensity !== undefined) {
                         seg.material.envMapIntensity = intensityScale;
