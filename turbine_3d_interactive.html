@@ -88,7 +88,7 @@
         #stats {
             position: absolute;
             top: 20px;
-            right: 20px;
+            left: calc(100vw - 240px);
             background: rgba(255, 255, 255, 0.95);
             padding: 15px;
             border-radius: 12px;
@@ -119,8 +119,8 @@
         }
         #legend {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
+            top: calc(100vh - 220px);
+            left: calc(100vw - 240px);
             background: rgba(255, 255, 255, 0.95);
             padding: 15px;
             border-radius: 12px;
@@ -147,25 +147,39 @@
         }
         #plot-panel {
             position: absolute;
-            bottom: 20px;
+            top: calc(100vh - 640px);
             left: 20px;
             background: rgba(255, 255, 255, 0.95);
             padding: 15px;
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 90vw;
+            max-height: 90vh;
             width: 800px;
             height: 600px;
             resize: both;
             overflow: auto;
-            min-width: 400px;
-            min-height: 300px;
         }
         #plot-panel.minimized {
-            height: auto;
+            width: auto !important;
+            height: auto !important;
+            max-width: none !important;
+            max-height: none !important;
             resize: none;
+            overflow: hidden !important;
         }
         #plot-panel.minimized #plot-content {
             display: none;
+            height: 0 !important;
+            overflow: hidden !important;
+        }
+        #plot-panel.minimized .trace-tab-content {
+            height: 0 !important;
+        }
+        #plot-panel.minimized .plot-header {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
         }
         .plot-header {
             display: flex;
@@ -874,7 +888,12 @@
             
             // Update force vectors visualization - show as load distribution
             if (turbineParams.showVectors) {
-                forceArrows.forEach(arrow => scene.remove(arrow));
+                // Properly dispose of old geometries and materials to prevent memory leaks
+                forceArrows.forEach(arrow => {
+                    scene.remove(arrow);
+                    if (arrow.geometry) arrow.geometry.dispose();
+                    if (arrow.material) arrow.material.dispose();
+                });
                 forceArrows = [];
                 
                 blades.forEach((blade, bladeIndex) => {
@@ -960,8 +979,12 @@
                     }
                 });
             } else {
-                // Hide vectors if disabled
-                forceArrows.forEach(arrow => scene.remove(arrow));
+                // Hide vectors if disabled - properly dispose to prevent memory leaks
+                forceArrows.forEach(arrow => {
+                    scene.remove(arrow);
+                    if (arrow.geometry) arrow.geometry.dispose();
+                    if (arrow.material) arrow.material.dispose();
+                });
                 forceArrows = [];
             }
             
@@ -1490,6 +1513,22 @@
                 // Keep only the 2 most recent TDC markers
                 if (plotData.tdcMarkers.length > 2) {
                     plotData.tdcMarkers.shift();
+                }
+            }
+            
+            // Safety check: hard limit to prevent memory issues
+            const absoluteMaxPoints = 5000; // Emergency brake
+            if (plotData.time.length > absoluteMaxPoints) {
+                console.warn('Data array exceeded safety limit, clearing oldest data');
+                const excessPoints = plotData.time.length - maxDataPoints;
+                for (let i = 0; i < excessPoints; i++) {
+                    plotData.time.shift();
+                    plotData.bladeLift.forEach(arr => arr.shift());
+                    plotData.bladeMomentY.forEach(arr => arr.shift());
+                    plotData.bladeMomentZ.forEach(arr => arr.shift());
+                    plotData.totalLift.shift();
+                    plotData.totalMomentY.shift();
+                    plotData.totalMomentZ.shift();
                 }
             }
             
@@ -2585,6 +2624,8 @@
                 pos4 = e.clientY;
                 document.onmouseup = closeDragElement;
                 document.onmousemove = elementDrag;
+                // Clear bottom positioning to prevent height stretching when both top and bottom are set
+                element.style.bottom = '';
             }
             
             function elementDrag(e) {
@@ -2621,7 +2662,26 @@
             const panel = document.getElementById('plot-panel');
             const btn = document.getElementById('minimize-plot-btn');
             panel.classList.toggle('minimized');
-            btn.textContent = panel.classList.contains('minimized') ? '+' : '−';
+            
+            if (panel.classList.contains('minimized')) {
+                // Store current dimensions before minimizing
+                panel.dataset.savedWidth = panel.style.width || '800px';
+                panel.dataset.savedHeight = panel.style.height || '600px';
+                // Force minimal height when minimized
+                panel.style.width = 'auto';
+                panel.style.height = 'auto';
+                panel.style.minHeight = '0';
+                panel.style.minWidth = '0';
+                panel.style.bottom = ''; // Clear bottom anchor to prevent stretching
+                btn.textContent = '+';
+            } else {
+                // Restore previous dimensions when expanding
+                panel.style.width = panel.dataset.savedWidth || '800px';
+                panel.style.height = panel.dataset.savedHeight || '600px';
+                panel.style.minHeight = '';
+                panel.style.minWidth = '';
+                btn.textContent = '−';
+            }
         });
         
         // Tab switching for traces
@@ -2666,8 +2726,19 @@
         });
         
         // Animation loop
-        function animate() {
+        let lastFrameTime = 0;
+        const targetFrameTime = 1000 / 60; // 60 FPS target
+        
+        function animate(currentTime) {
             requestAnimationFrame(animate);
+            
+            // Frame rate limiter - only update if enough time has passed
+            if (currentTime - lastFrameTime < targetFrameTime * 0.9) {
+                // Still render, just don't update physics
+                if (composer && isPhotoMode) composer.render(); else renderer.render(scene, camera);
+                return;
+            }
+            lastFrameTime = currentTime;
             
             // Update blade loads BEFORE rotating (so loads match current position)
             updateBladeLoads();
