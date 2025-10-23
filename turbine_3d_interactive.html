@@ -260,6 +260,25 @@
             border-radius: 4px;
             border: 1px solid #ddd;
         }
+        #display-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: rgba(102, 126, 234, 0.95);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            z-index: 10000;
+            transition: all 0.3s;
+        }
+        #display-toggle:hover {
+            background: rgba(102, 126, 234, 1);
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body>
@@ -305,9 +324,9 @@
             </div>
             
             <div class="control-group">
-                <label>Yaw Angle: <span class="value-display" id="yaw-value">0.0</span>°</label>
-                <input type="range" id="yaw" min="-30" max="30" value="0" step="1">
-                <div class="info-text">Nacelle yaw misalignment</div>
+                <label>Wind Direction: <span class="value-display" id="yaw-value">0.0</span>°</label>
+                <input type="range" id="yaw" min="-180" max="180" value="0" step="5">
+                <div class="info-text">Wind yaw angle (turbine stays fixed)</div>
             </div>
             
             <div class="control-group">
@@ -323,11 +342,12 @@
                 <div class="info-text">Red=X, Green=Y, Blue=Z</div>
             </div>
             
+            
             <div class="control-group">
                 <label>
-                    <input type="checkbox" id="photo-mode"> Photo Rendering
+                    <input type="checkbox" id="wind-farm-mode"> Wind Farm Mode (5 Turbines)
                 </label>
-                <div class="info-text">HDRI + PBR + bloom/DOF (slower)</div>
+                <div class="info-text">Multiple turbines with speed variation</div>
             </div>
             
             <div class="control-group">
@@ -450,6 +470,8 @@
         </div>
     </div>
 
+    <button id="display-toggle">📺 Hide Displays</button>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
@@ -467,7 +489,7 @@
         // Scene setup
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87ceeb);
-        scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
+        scene.fog = null; // No fog in default mode
         
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(50, 30, 50);
@@ -489,15 +511,19 @@
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(50, 50, 50);
         directionalLight.castShadow = true;
-        scene.add(directionalLight);
         
-        // Ground
-        const groundGeometry = new THREE.PlaneGeometry(200, 200);
-        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x4a7c59 });
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.rotation.x = -Math.PI / 2;
-        ground.receiveShadow = true;
-        scene.add(ground);
+        // Configure shadow camera for proper coverage
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.left = -100;
+        directionalLight.shadow.camera.right = 100;
+        directionalLight.shadow.camera.top = 100;
+        directionalLight.shadow.camera.bottom = -100;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 200;
+        directionalLight.shadow.bias = -0.0001;
+        
+        scene.add(directionalLight);
         
         // Debug axes
         const sceneAxes = new THREE.AxesHelper(30);
@@ -527,6 +553,9 @@
         let composer = null, renderPass = null, bloomPass = null, bokehPass = null, fxaaPass = null;
         let pmremGen = null, envMap = null;
         let skyboxMesh = null;  // For scalable background
+        let cloudPlane = null;  // Animated cloud layer
+        let cloudOffset = 0;    // For scrolling clouds
+        let ground = null;      // Ground plane
         
         // remember "simple" look to restore
         const OriginalLook = {
@@ -559,7 +588,10 @@
             showHeatmap: true,   // Show load heatmap on blades
             angularResolution: 1.0,  // Angular resolution in degrees (0.333 to 15)
             paused: false,       // Pause rotation
-            manualRotation: 0    // Manual rotation angle in degrees
+            manualRotation: 0,   // Manual rotation angle in degrees
+            windFarmMode: false, // Enable multiple turbines
+            farmTurbineCount: 5, // Total turbines in wind farm
+            speedVariation: 0.05 // ±5% speed variation
         };
         
         // Data history for plotting
@@ -592,6 +624,9 @@
             samplingInterval: 0,
             speedMultiplier: 5  // Speed up rotation by this factor during fast collection
         };
+        
+        // Wind farm additional turbines
+        let additionalTurbines = [];
         
         let timeCounter = 0;
         
@@ -653,17 +688,195 @@
             fourierData.lastCollectionTime = 0;
         }
         
-        // Tower
+        // Ground plane with shadow receiving and high-quality grass texture WITH UNDULATION
+        const groundGeometry = new THREE.PlaneGeometry(1000, 1000, 150, 150); // High detail segments
+        const vertices = groundGeometry.attributes.position.array;
+        
+        // Add rolling terrain undulation (same as photo mode)
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const z = vertices[i + 1];
+            const distance = Math.sqrt(x * x + z * z);
+            
+            // Multiple sine waves for natural-looking hills
+            let height = Math.sin(x * 0.01) * 8 + Math.cos(z * 0.012) * 6;
+            height += Math.sin(x * 0.03 + z * 0.02) * 3;
+            height += Math.sin(distance * 0.008) * 12;
+            height -= distance * 0.02; // Gentle slope down
+            
+            // Add valleys and ridges
+            height += Math.sin(x * 0.005) * Math.cos(z * 0.006) * 5;
+            
+            vertices[i + 2] = height;
+        }
+        
+        groundGeometry.computeVertexNormals();
+        
+        // Create high-quality procedural grass texture with fine detail
+        const grassCanvas = document.createElement('canvas');
+        grassCanvas.width = 1024; // Higher resolution
+        grassCanvas.height = 1024;
+        const grassCtx = grassCanvas.getContext('2d');
+        
+        // Fill with base grass color
+        grassCtx.fillStyle = '#4a7c2f';
+        grassCtx.fillRect(0, 0, 1024, 1024);
+        
+        // Add fine grass blade texture with multiple layers
+        for (let layer = 0; layer < 3; layer++) {
+            for (let i = 0; i < 8000; i++) {
+                const x = Math.random() * 1024;
+                const y = Math.random() * 1024;
+                const brightness = 0.85 + Math.random() * 0.3;
+                const length = 2 + Math.random() * 4;
+                const width = 0.3 + Math.random() * 0.5;
+                
+                // Random grass blade color
+                const r = Math.floor(74 * brightness);
+                const g = Math.floor(124 * brightness);
+                const b = Math.floor(47 * brightness);
+                
+                grassCtx.strokeStyle = `rgba(${r},${g},${b},${0.6 + Math.random() * 0.4})`;
+                grassCtx.lineWidth = width;
+                grassCtx.beginPath();
+                grassCtx.moveTo(x, y);
+                grassCtx.lineTo(x + (Math.random() - 0.5) * 2, y - length);
+                grassCtx.stroke();
+            }
+        }
+        
+        // Add subtle dirt patches
+        for (let i = 0; i < 100; i++) {
+            const x = Math.random() * 1024;
+            const y = Math.random() * 1024;
+            const radius = 10 + Math.random() * 30;
+            const gradient = grassCtx.createRadialGradient(x, y, 0, x, y, radius);
+            gradient.addColorStop(0, 'rgba(90, 70, 40, 0.2)');
+            gradient.addColorStop(1, 'rgba(90, 70, 40, 0)');
+            grassCtx.fillStyle = gradient;
+            grassCtx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+        }
+        
+        const grassTexture = new THREE.CanvasTexture(grassCanvas);
+        grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+        grassTexture.repeat.set(80, 80); // More repetition for finer detail
+        grassTexture.anisotropy = renderer.capabilities.getMaxAnisotropy(); // Max quality filtering
+        
+        const groundMaterial = new THREE.MeshStandardMaterial({
+            map: grassTexture,
+            roughness: 0.95,
+            metalness: 0.0
+        });
+        ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2; // Rotate to be horizontal
+        ground.position.y = 0; // At ground level
+        ground.receiveShadow = true;
+        scene.add(ground);
+        
+        // Function to calculate ground height at any position using same formula as terrain
+        function getGroundHeightAt(x, z) {
+            const distance = Math.sqrt(x * x + z * z);
+            let height = Math.sin(x * 0.01) * 8 + Math.cos(z * 0.012) * 6;
+            height += Math.sin(x * 0.03 + z * 0.02) * 3;
+            height += Math.sin(distance * 0.008) * 12;
+            height -= distance * 0.02;
+            height += Math.sin(x * 0.005) * Math.cos(z * 0.006) * 5;
+            return height;
+        }
+        
+        // Calculate ground height at main turbine position (0, 0)
+        const groundHeightAtTurbine = getGroundHeightAt(0, 0);
+        
+        // Tower - position base at ground height
         const towerGeometry = new THREE.CylinderGeometry(0.8, 1.2, turbineParams.towerHeight, 16);
         const towerMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });
         const tower = new THREE.Mesh(towerGeometry, towerMaterial);
-        tower.position.y = turbineParams.towerHeight / 2;
+        tower.position.y = turbineParams.towerHeight / 2 + groundHeightAtTurbine;
         tower.castShadow = true;
         scene.add(tower);
         
+        // Add infinite sky sphere
+        const skyGeo = new THREE.SphereGeometry(10000, 64, 64);
+        const skyMat = new THREE.ShaderMaterial({
+            uniforms: {
+                topColor: { value: new THREE.Color(0x0077ff) },
+                horizonColor: { value: new THREE.Color(0x87ceeb) },
+                sunColor: { value: new THREE.Color(0xffffff) }
+            },
+            vertexShader: `
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 topColor;
+                uniform vec3 horizonColor;
+                uniform vec3 sunColor;
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec3 direction = normalize(vWorldPosition);
+                    float elevation = direction.y;
+                    
+                    vec3 color;
+                    if (elevation > 0.0) {
+                        float t = pow(elevation, 0.4);
+                        color = mix(horizonColor, topColor, t);
+                    } else {
+                        float t = pow(abs(elevation), 0.6);
+                        color = mix(horizonColor, sunColor, t * 0.3);
+                    }
+                    
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `,
+            side: THREE.BackSide,
+            depthWrite: false,
+            depthTest: false
+        });
+        skyboxMesh = new THREE.Mesh(skyGeo, skyMat);
+        skyboxMesh.renderOrder = -1000;
+        scene.add(skyboxMesh);
+        
+        // Add animated cloud layer
+        const cloudGeometry = new THREE.PlaneGeometry(1500, 1500, 10, 10);
+        const cloudCanvas = document.createElement('canvas');
+        cloudCanvas.width = 512;
+        cloudCanvas.height = 512;
+        const cloudCtx = cloudCanvas.getContext('2d');
+        cloudCtx.fillStyle = 'rgba(255, 255, 255, 0)';
+        cloudCtx.fillRect(0, 0, 512, 512);
+        for (let i = 0; i < 30; i++) {
+            const cx = Math.random() * 512;
+            const cy = Math.random() * 512;
+            const radius = 30 + Math.random() * 70;
+            const gradient = cloudCtx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            gradient.addColorStop(0, `rgba(255, 255, 255, ${0.3 + Math.random() * 0.4})`);
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            cloudCtx.fillStyle = gradient;
+            cloudCtx.fillRect(0, 0, 512, 512);
+        }
+        const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
+        cloudTexture.wrapS = cloudTexture.wrapT = THREE.RepeatWrapping;
+        cloudTexture.repeat.set(3, 3);
+        const cloudMaterial = new THREE.MeshBasicMaterial({
+            map: cloudTexture,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        cloudPlane = new THREE.Mesh(cloudGeometry, cloudMaterial);
+        cloudPlane.rotation.x = -Math.PI / 2;
+        cloudPlane.position.y = 200;
+        scene.add(cloudPlane);
+        cloudOffset = 0;
+        
         // Nacelle (rotates for yaw)
         const nacelleGroup = new THREE.Group();
-        nacelleGroup.position.set(0, turbineParams.towerHeight, 0);
+        nacelleGroup.position.set(0, turbineParams.towerHeight + groundHeightAtTurbine, 0);
         scene.add(nacelleGroup);
         
         const nacelleGeometry = new THREE.BoxGeometry(4, 2, 2);
@@ -767,6 +980,111 @@
                 rebuildCharts();
             }
             resetFourierCollection();
+        }
+        
+        // Create wind farm with multiple turbines
+        function createWindFarm() {
+            // Clear existing additional turbines
+            additionalTurbines.forEach(t => {
+                // Dispose of geometries and materials
+                t.traverse(child => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                });
+                scene.remove(t);
+            });
+            additionalTurbines = [];
+            
+            if (!turbineParams.windFarmMode) return;
+            
+            // Preset positions for additional 4 turbines (main turbine at 0,0)
+            const positions = [
+                {x: -60, z: -40},
+                {x: 60, z: -40},
+                {x: -60, z: 40},
+                {x: 60, z: 40}
+            ];
+            
+            positions.forEach((pos, i) => {
+                // Calculate ground height at this turbine's position
+                const groundHeight = getGroundHeightAt(pos.x, pos.z);
+                
+                const turbineGroup = new THREE.Group();
+                turbineGroup.position.set(pos.x, groundHeight, pos.z);
+                
+                // Speed variation for this turbine
+                const speedMultiplier = 1 + (Math.random() - 0.5) * 2 * turbineParams.speedVariation;
+                turbineGroup.userData.speedMultiplier = speedMultiplier;
+                
+                // Clone tower
+                const towerGeo = new THREE.CylinderGeometry(0.8, 1.2, turbineParams.towerHeight, 16);
+                const towerMat = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+                const towerClone = new THREE.Mesh(towerGeo, towerMat);
+                towerClone.position.y = turbineParams.towerHeight / 2;
+                towerClone.castShadow = true;
+                turbineGroup.add(towerClone);
+                
+                // Clone nacelle group
+                const nacelleGrp = new THREE.Group();
+                nacelleGrp.position.set(0, turbineParams.towerHeight, 0);
+                
+                const nacelleGeo = new THREE.BoxGeometry(4, 2, 2);
+                const nacelleMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee });
+                const nacelleClone = new THREE.Mesh(nacelleGeo, nacelleMat);
+                nacelleClone.castShadow = true;
+                nacelleGrp.add(nacelleClone);
+                turbineGroup.add(nacelleGrp);
+                
+                // Clone rotor group
+                const rotorGrp = new THREE.Group();
+                rotorGrp.position.x = 2;
+                nacelleGrp.add(rotorGrp);
+                
+                // Clone hub
+                const hubGeo = new THREE.SphereGeometry(turbineParams.hubRadius, 16, 16);
+                const hubMat = new THREE.MeshPhongMaterial({ color: 0x888888 });
+                const hubClone = new THREE.Mesh(hubGeo, hubMat);
+                hubClone.castShadow = true;
+                rotorGrp.add(hubClone);
+                
+                // Clone blades
+                for (let j = 0; j < turbineParams.numBlades; j++) {
+                    const bladeGroup = new THREE.Group();
+                    const pitchGroup = new THREE.Group();
+                    bladeGroup.add(pitchGroup);
+                    
+                    const numSegments = 20; // Simpler blades for performance
+                    for (let k = 0; k < numSegments; k++) {
+                        const r = turbineParams.hubRadius + (k / numSegments) * (turbineParams.bladeRadius - turbineParams.hubRadius);
+                        const nextR = turbineParams.hubRadius + ((k + 1) / numSegments) * (turbineParams.bladeRadius - turbineParams.hubRadius);
+                        const segmentLength = nextR - r;
+                        const chord = 1.5 * (1 - k / numSegments) + 0.3;
+                        
+                        const segGeo = new THREE.BoxGeometry(0.2, segmentLength, chord);
+                        const segMat = new THREE.MeshPhongMaterial({ color: 0x4444ff });
+                        const segment = new THREE.Mesh(segGeo, segMat);
+                        segment.position.y = r + segmentLength / 2;
+                        segment.castShadow = true;
+                        pitchGroup.add(segment);
+                    }
+                    
+                    bladeGroup.rotation.y = Math.PI / 2;
+                    bladeGroup.rotation.x = (j * 2 * Math.PI) / turbineParams.numBlades;
+                    rotorGrp.add(bladeGroup);
+                }
+                
+                turbineGroup.userData.rotorGroup = rotorGrp;
+                turbineGroup.userData.nacelleGroup = nacelleGrp;
+                
+                scene.add(turbineGroup);
+                additionalTurbines.push(turbineGroup);
+            });
         }
         
         // Color mapping function (enhanced with more stops)
@@ -1085,24 +1403,23 @@
             // 5. Atmospheric fog for depth
             scene.fog = new THREE.FogExp2(0xe0f0ff, 0.0015); // Exponential fog, horizon color
 
-            // HDRI env for reflections only
+            // HDRI env for reflections and background
             if (!pmremGen) pmremGen = new THREE.PMREMGenerator(renderer);
             new THREE.RGBELoader().load(PhotoConfig.HDRI_URL, (hdr)=>{
                 const tex = pmremGen.fromEquirectangular(hdr).texture;
                 envMap = tex;
-                scene.environment = envMap; // For reflections on materials
+                scene.environment = envMap; // For reflections on materials ONLY
+                // Don't set scene.background - use gradient sky instead
                 hdr.dispose();
             });
             
-            // Create photorealistic sky gradient (3-color)
-            const skyGeo = new THREE.SphereGeometry(800, 32, 15);
+            // Create infinite-looking sky sphere that completely surrounds the scene
+            const skyGeo = new THREE.SphereGeometry(10000, 64, 64); // HUGE sphere for true infinity feel
             const skyMat = new THREE.ShaderMaterial({
                 uniforms: {
-                    topColor: { value: new THREE.Color(0x0055dd) },      // Deep blue sky
-                    midColor: { value: new THREE.Color(0x4d9fff) },      // Mid blue
-                    bottomColor: { value: new THREE.Color(0xffffff) },   // Horizon white
-                    offset: { value: 33 },
-                    exponent: { value: 0.6 }
+                    topColor: { value: new THREE.Color(0x0077ff) },      // Bright sky blue
+                    horizonColor: { value: new THREE.Color(0x87ceeb) },  // Sky blue horizon
+                    sunColor: { value: new THREE.Color(0xffffff) }       // White near horizon
                 },
                 vertexShader: `
                     varying vec3 vWorldPosition;
@@ -1114,31 +1431,82 @@
                 `,
                 fragmentShader: `
                     uniform vec3 topColor;
-                    uniform vec3 midColor;
-                    uniform vec3 bottomColor;
-                    uniform float offset;
-                    uniform float exponent;
+                    uniform vec3 horizonColor;
+                    uniform vec3 sunColor;
                     varying vec3 vWorldPosition;
                     void main() {
-                        float h = normalize(vWorldPosition + offset).y;
-                        h = max(pow(max(h, 0.0), exponent), 0.0);
+                        // Normalized direction from center
+                        vec3 direction = normalize(vWorldPosition);
+                        float elevation = direction.y; // -1 (down) to +1 (up)
                         
-                        // 3-color gradient: horizon -> mid -> top
                         vec3 color;
-                        if (h < 0.5) {
-                            color = mix(bottomColor, midColor, h * 2.0);
+                        if (elevation > 0.0) {
+                            // Sky above horizon: smooth blend from horizon to top
+                            // Use exponential for more realistic atmosphere
+                            float t = pow(elevation, 0.4);
+                            color = mix(horizonColor, topColor, t);
                         } else {
-                            color = mix(midColor, topColor, (h - 0.5) * 2.0);
+                            // Below horizon: blend to lighter color (atmospheric glow)
+                            float t = pow(abs(elevation), 0.6);
+                            color = mix(horizonColor, sunColor, t * 0.3);
                         }
                         
                         gl_FragColor = vec4(color, 1.0);
                     }
                 `,
-                side: THREE.BackSide
+                side: THREE.BackSide,
+                depthWrite: false,
+                depthTest: false
             });
             skyboxMesh = new THREE.Mesh(skyGeo, skyMat);
-            skyboxMesh.renderOrder = -1;
+            skyboxMesh.renderOrder = -1000;
             scene.add(skyboxMesh);
+            
+            // Create animated cloud layer with procedural texture
+            const cloudGeometry = new THREE.PlaneGeometry(1500, 1500, 10, 10);
+            
+            // Create procedural cloud texture using canvas
+            const cloudCanvas = document.createElement('canvas');
+            cloudCanvas.width = 512;
+            cloudCanvas.height = 512;
+            const ctx = cloudCanvas.getContext('2d');
+            
+            // Generate cloud-like pattern
+            ctx.fillStyle = 'rgba(255, 255, 255, 0)';
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Draw multiple layers of soft clouds
+            for (let i = 0; i < 30; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                const radius = 30 + Math.random() * 70;
+                const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+                gradient.addColorStop(0, `rgba(255, 255, 255, ${0.3 + Math.random() * 0.4})`);
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 512, 512);
+            }
+            
+            const cloudTexture = new THREE.CanvasTexture(cloudCanvas);
+            cloudTexture.wrapS = cloudTexture.wrapT = THREE.RepeatWrapping;
+            cloudTexture.repeat.set(3, 3);
+            
+            const cloudMaterial = new THREE.MeshBasicMaterial({
+                map: cloudTexture,
+                transparent: true,
+                opacity: 0.5,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            });
+            
+            cloudPlane = new THREE.Mesh(cloudGeometry, cloudMaterial);
+            cloudPlane.rotation.x = -Math.PI / 2; // Face up
+            cloudPlane.position.y = 200; // High in the sky
+            cloudPlane.userData.isCloudLayer = true;
+            scene.add(cloudPlane);
+            
+            // SKIP gradient skybox - using HDRI as background instead
+            // The HDRI background is set above via scene.background = envMap
             
             // Add sun disk for realism
             const sunGeo = new THREE.SphereGeometry(15, 16, 16);
@@ -1151,61 +1519,11 @@
             sunMesh.userData.isSun = true;
             scene.add(sunMesh);
             
-            // Create rolling hillside terrain with enhanced detail
-            const hillGeo = new THREE.PlaneGeometry(800, 800, 80, 80); // Increased from 50x50 to 80x80
-            const vertices = hillGeo.attributes.position.array;
+            // SKIP duplicate terrain - now using shared terrain in both modes
+            // The main scene terrain already has the same undulation
             
-            // Add vertex colors for grass variation
-            const colors = new Float32Array(vertices.length);
-            
-            // Create rolling hills with multiple waves
-            for (let i = 0; i < vertices.length; i += 3) {
-                const x = vertices[i];
-                const z = vertices[i + 1];
-                const distance = Math.sqrt(x * x + z * z);
-                
-                // Multiple sine waves for natural-looking hills
-                let height = Math.sin(x * 0.01) * 8 + Math.cos(z * 0.012) * 6;
-                height += Math.sin(x * 0.03 + z * 0.02) * 3;
-                height += Math.sin(distance * 0.008) * 12; // Increased amplitude
-                height -= distance * 0.02; // Gentle slope down
-                
-                // Add valleys and ridges
-                height += Math.sin(x * 0.005) * Math.cos(z * 0.006) * 5;
-                
-                vertices[i + 2] = height;
-                
-                // Color variation (lighter and darker grass patches)
-                const colorVariation = 0.8 + Math.random() * 0.4; // 0.8 to 1.2
-                const heightFactor = 1.0 - (distance / 800) * 0.3; // Darker in distance
-                const finalColor = colorVariation * heightFactor;
-                
-                colors[i] = finalColor;     // R
-                colors[i + 1] = finalColor; // G
-                colors[i + 2] = finalColor; // B
-            }
-            
-            hillGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            hillGeo.computeVertexNormals();
-            
-            // Enhanced grass material with roughness variation
-            const hillMat = new THREE.MeshStandardMaterial({
-                color: 0x4a7c2f,
-                roughness: 0.9,
-                metalness: 0.0,
-                flatShading: false,
-                vertexColors: true // Use vertex colors for variation
-            });
-            
-            const hillMesh = new THREE.Mesh(hillGeo, hillMat);
-            hillMesh.rotation.x = -Math.PI / 2;
-            hillMesh.position.y = -15; // Lower than the ground plane
-            hillMesh.receiveShadow = true;
-            hillMesh.userData.isHillside = true;
-            scene.add(hillMesh);
-            
-            // Hide original ground in photo mode
-            ground.visible = false;
+            // Don't hide ground - we're using the same terrain in both modes
+            // ground.visible = true; // Keep it visible
 
             // Swap to enhanced PBR materials
             forEachMesh((m)=>{
@@ -1330,7 +1648,7 @@
             // Restore background/fog and remove skybox + sun
             scene.environment = null;
             scene.background = OriginalLook.background || new THREE.Color(0x87ceeb);
-            scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
+            scene.fog = null; // No fog in default mode
             
             // Remove skybox
             if (skyboxMesh) {
@@ -1338,6 +1656,16 @@
                 skyboxMesh.geometry.dispose();
                 skyboxMesh.material.dispose();
                 skyboxMesh = null;
+            }
+            
+            // Remove cloud layer
+            if (cloudPlane) {
+                scene.remove(cloudPlane);
+                cloudPlane.geometry.dispose();
+                cloudPlane.material.map.dispose();
+                cloudPlane.material.dispose();
+                cloudPlane = null;
+                cloudOffset = 0;
             }
             
             // Remove sun disk
@@ -1357,7 +1685,9 @@
                     child.material.dispose();
                 }
             });
-            ground.visible = true;
+            
+            // Ground is always visible now (same terrain in both modes)
+            // ground.visible = true; // Already visible
 
             // Restore original materials
             forEachMesh((m)=>{
@@ -2184,7 +2514,7 @@
         document.getElementById('yaw').addEventListener('input', (e) => {
             turbineParams.yawAngle = parseFloat(e.target.value);
             document.getElementById('yaw-value').textContent = turbineParams.yawAngle.toFixed(1);
-            nacelleGroup.rotation.y = turbineParams.yawAngle * Math.PI / 180;
+            // Don't rotate nacelle - yaw now represents wind direction, turbine stays fixed
             resetFourierCollection();
         });
         
@@ -2201,11 +2531,11 @@
             nacelleAxes.visible = show;
         });
         
-        document.getElementById('photo-mode').addEventListener('change', (e) => {
-            if (e.target.checked) enablePhotoMode();
-            else disablePhotoMode();
-        });
         
+        document.getElementById('wind-farm-mode').addEventListener('change', (e) => {
+            turbineParams.windFarmMode = e.target.checked;
+            createWindFarm();
+        });
         
         document.getElementById('show-heatmap').addEventListener('change', (e) => {
             turbineParams.showHeatmap = e.target.checked;
@@ -2735,7 +3065,7 @@
             // Frame rate limiter - only update if enough time has passed
             if (currentTime - lastFrameTime < targetFrameTime * 0.9) {
                 // Still render, just don't update physics
-                if (composer && isPhotoMode) composer.render(); else renderer.render(scene, camera);
+                renderer.render(scene, camera);
                 return;
             }
             lastFrameTime = currentTime;
@@ -2749,24 +3079,28 @@
                 const speedMultiplier = (fourierData.collecting && fourierData.fastMode) ? fourierData.speedMultiplier : 1;
                 const deltaRotation = (turbineParams.shaftSpeed * 2 * Math.PI) / (60 * 60) * speedMultiplier; // per frame at 60fps
                 rotorGroup.rotation.x += deltaRotation;
-            }
-            
-            // Keep sky centered on camera in photo mode
-            if (isPhotoMode && skyboxMesh) {
-                skyboxMesh.position.copy(camera.position);
                 
-                // Adjust material env map intensity based on distance
-                const camDist = camera.position.length();
-                const intensityScale = THREE.MathUtils.clamp(camDist / 50, 0.6, 1.5);
-                bladeSegments.forEach(seg => {
-                    if (seg.material.envMapIntensity !== undefined) {
-                        seg.material.envMapIntensity = intensityScale;
+                // Rotate wind farm turbines with speed variation
+                additionalTurbines.forEach(turbine => {
+                    const rotorGrp = turbine.userData.rotorGroup;
+                    const speedMult = turbine.userData.speedMultiplier;
+                    if (rotorGrp) {
+                        rotorGrp.rotation.x += deltaRotation * speedMult * speedMultiplier;
                     }
                 });
             }
             
+            // Keep sky centered on camera for infinite distance effect
+            skyboxMesh.position.copy(camera.position);
+            
+            // Animate cloud layer
+            cloudOffset += 0.0002;
+            cloudPlane.material.map.offset.set(cloudOffset, cloudOffset * 0.7);
+            cloudPlane.position.x = camera.position.x;
+            cloudPlane.position.z = camera.position.z;
+            
             controls.update();
-            if (composer && isPhotoMode) composer.render(); else renderer.render(scene, camera);
+            renderer.render(scene, camera);
         }
         
         // Optional cinematic zoom on key 'z'
@@ -2796,6 +3130,36 @@
             if (e.key==='z' && hub){
                 const p = new THREE.Vector3(); hub.getWorldPosition(p);
                 cinematicZoom(p.clone().add(new THREE.Vector3(6,2,6)), p);
+            }
+        });
+        
+        // Display toggle button
+        let displayState = {
+            modalsHidden: false,
+            savedVisibility: {}
+        };
+        
+        document.getElementById('display-toggle').addEventListener('click', () => {
+            const btn = document.getElementById('display-toggle');
+            const panels = ['controls-panel', 'stats', 'legend', 'plot-panel'];
+            
+            if (!displayState.modalsHidden) {
+                // Hide all modals
+                panels.forEach(id => {
+                    const panel = document.getElementById(id);
+                    displayState.savedVisibility[id] = panel.style.display || 'block';
+                    panel.style.display = 'none';
+                });
+                btn.textContent = '📺 Show Displays';
+                displayState.modalsHidden = true;
+            } else {
+                // Restore modals
+                panels.forEach(id => {
+                    const panel = document.getElementById(id);
+                    panel.style.display = displayState.savedVisibility[id] || 'block';
+                });
+                btn.textContent = '📺 Hide Displays';
+                displayState.modalsHidden = false;
             }
         });
         

@@ -3,7 +3,7 @@ node_modules/
 package-lock.json
 
 # Python virtual environment
-venv/
+.venv/
 env/
 *.pyc
 __pycache__/
