@@ -160,6 +160,34 @@
             resize: both;
             overflow: auto;
         }
+        #spanwise-panel {
+            position: absolute;
+            top: 120px;
+            left: calc(100vw - 620px);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 90vw;
+            max-height: 90vh;
+            width: 600px;
+            height: 700px;
+            resize: both;
+            overflow: auto;
+        }
+        #spanwise-panel.minimized {
+            width: auto !important;
+            height: auto !important;
+            max-width: none !important;
+            max-height: none !important;
+            resize: none;
+            overflow: hidden !important;
+        }
+        #spanwise-panel.minimized #spanwise-content {
+            display: none;
+            height: 0 !important;
+            overflow: hidden !important;
+        }
         #plot-panel.minimized {
             width: auto !important;
             height: auto !important;
@@ -228,6 +256,37 @@
             overflow-y: auto;
         }
         .trace-tab-content.active {
+            display: block;
+        }
+        .spanwise-tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #ddd;
+        }
+        .spanwise-tab-btn {
+            padding: 8px 16px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 0.95em;
+            color: #666;
+            transition: all 0.2s;
+        }
+        .spanwise-tab-btn:hover {
+            color: #333;
+            background: rgba(102, 126, 234, 0.1);
+        }
+        .spanwise-tab-btn.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: bold;
+        }
+        .spanwise-tab-content {
+            display: none;
+        }
+        .spanwise-tab-content.active {
             display: block;
         }
         .chart-container {
@@ -359,6 +418,13 @@
             
             <div class="control-group">
                 <label>
+                    <input type="checkbox" id="remove-mean"> Remove 0P (Mean Component)
+                </label>
+                <div class="info-text">Show only alternating loads</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
                     <input type="checkbox" id="show-vectors"> Show Force Vectors
                 </label>
             </div>
@@ -406,6 +472,43 @@
         <div class="legend-labels">
             <span>Low</span>
             <span>High</span>
+        </div>
+    </div>
+    
+    <div id="spanwise-panel">
+        <div class="plot-header">
+            <div class="plot-title">📐 Spanwise Analysis</div>
+            <button class="minimize-btn" id="minimize-spanwise-btn">−</button>
+        </div>
+        <div id="spanwise-content">
+            <div class="spanwise-tabs">
+                <button class="spanwise-tab-btn active" data-tab="loading">Spanwise Loading</button>
+                <button class="spanwise-tab-btn" data-tab="section">Section Analysis</button>
+            </div>
+            
+            <div id="loading-tab" class="spanwise-tab-content active">
+                <div style="padding: 10px;">
+                    <p style="font-size: 0.9em; margin: 5px 0;">Thrust distribution along blade span at different azimuth angles</p>
+                    <canvas id="spanwise-chart"></canvas>
+                </div>
+            </div>
+            
+            <div id="section-tab" class="spanwise-tab-content">
+                <div style="padding: 10px;">
+                    <p style="font-size: 0.9em; margin: 5px 0;">Airfoil section and velocity vectors (at radial station from Load Traces)</p>
+                    <canvas id="section-chart"></canvas>
+                    <div id="section-info" style="margin-top: 10px; font-size: 0.85em; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <div><strong>Azimuth:</strong> <span id="section-azimuth">0°</span></div>
+                            <div><strong>AoA:</strong> <span id="section-aoa">0°</span></div>
+                            <div><strong>V_total:</strong> <span id="section-vtotal">0 m/s</span></div>
+                            <div><strong>V_tangential:</strong> <span id="section-vtang">0 m/s</span></div>
+                            <div><strong>V_normal:</strong> <span id="section-vnorm">0 m/s</span></div>
+                            <div><strong>Thrust:</strong> <span id="section-thrust">0 N</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -570,6 +673,9 @@
             if (!OriginalMats.has(mesh)) OriginalMats.set(mesh, mesh.material);
         }
         
+        // Animation frame counter
+        let frameCount = 0;
+        
         // Turbine parameters
         const turbineParams = {
             windSpeed: 10,
@@ -591,7 +697,8 @@
             manualRotation: 0,   // Manual rotation angle in degrees
             windFarmMode: false, // Enable multiple turbines
             farmTurbineCount: 5, // Total turbines in wind farm
-            speedVariation: 0.05 // ±5% speed variation
+            speedVariation: 0.05, // ±5% speed variation
+            removeMean: false    // Remove 0P (mean) component from loads
         };
         
         // Data history for plotting
@@ -1306,6 +1413,33 @@
                 forceArrows = [];
             }
             
+            // Apply mean removal to heatmap loads if enabled
+            if (turbineParams.removeMean) {
+                // Calculate mean thrust across all blade segments
+                let totalThrust = 0;
+                let segmentCount = 0;
+                bladeSegments.forEach(segment => {
+                    if (segment.userData.thrust !== undefined) {
+                        totalThrust += segment.userData.thrust;
+                        segmentCount++;
+                    }
+                });
+                const meanThrust = segmentCount > 0 ? totalThrust / segmentCount : 0;
+                
+                // Recalculate loads with mean removed
+                maxLoad = -Infinity;
+                minLoad = Infinity;
+                bladeSegments.forEach(segment => {
+                    if (segment.userData.thrust !== undefined) {
+                        const demeanedThrust = segment.userData.thrust - meanThrust;
+                        const load = Math.abs(demeanedThrust);
+                        segment.userData.load = load;
+                        if (load > maxLoad) maxLoad = load;
+                        if (load < minLoad) minLoad = load;
+                    }
+                });
+            }
+            
             // Autoscale and color segments
             const loadRange = maxLoad - minLoad;
             bladeSegments.forEach(segment => {
@@ -1771,6 +1905,7 @@
             
             plotData.time.push(plotData.timeValue.toFixed(3));
             
+            // Store raw data (always store the raw values)
             for (let i = 0; i < turbineParams.numBlades; i++) {
                 if (plotData.bladeLift[i]) {
                     plotData.bladeLift[i].push(bladeLifts[i] || 0);
@@ -1864,6 +1999,12 @@
             
             // Update charts
             updateCharts();
+            
+            // Update spanwise analysis displays (less frequently)
+            if (frameCount % 5 === 0) { // Update every 5 frames
+                updateSpanwiseChart();
+                updateSectionDiagram();
+            }
         }
         
         // Update chart displays
@@ -1871,6 +2012,57 @@
             if (plotData.bladeLift.length !== turbineParams.numBlades) {
                 // Data arrays don't match blade count, skip update
                 return;
+            }
+            
+            // Prepare data for display (with optional mean removal)
+            let displayBladeLift = plotData.bladeLift;
+            let displayBladeMomentY = plotData.bladeMomentY;
+            let displayBladeMomentZ = plotData.bladeMomentZ;
+            let displayTotalLift = plotData.totalLift;
+            let displayTotalMomentY = plotData.totalMomentY;
+            let displayTotalMomentZ = plotData.totalMomentZ;
+            
+            if (turbineParams.removeMean) {
+                // Calculate and subtract mean from each dataset
+                displayBladeLift = plotData.bladeLift.map(bladeData => {
+                    if (bladeData && bladeData.length > 0) {
+                        const mean = bladeData.reduce((a, b) => a + b, 0) / bladeData.length;
+                        return bladeData.map(v => v - mean);
+                    }
+                    return bladeData;
+                });
+                
+                displayBladeMomentY = plotData.bladeMomentY.map(bladeData => {
+                    if (bladeData && bladeData.length > 0) {
+                        const mean = bladeData.reduce((a, b) => a + b, 0) / bladeData.length;
+                        return bladeData.map(v => v - mean);
+                    }
+                    return bladeData;
+                });
+                
+                displayBladeMomentZ = plotData.bladeMomentZ.map(bladeData => {
+                    if (bladeData && bladeData.length > 0) {
+                        const mean = bladeData.reduce((a, b) => a + b, 0) / bladeData.length;
+                        return bladeData.map(v => v - mean);
+                    }
+                    return bladeData;
+                });
+                
+                // Remove mean from totals
+                if (plotData.totalLift.length > 0) {
+                    const meanLift = plotData.totalLift.reduce((a, b) => a + b, 0) / plotData.totalLift.length;
+                    displayTotalLift = plotData.totalLift.map(v => v - meanLift);
+                }
+                
+                if (plotData.totalMomentY.length > 0) {
+                    const meanMomentY = plotData.totalMomentY.reduce((a, b) => a + b, 0) / plotData.totalMomentY.length;
+                    displayTotalMomentY = plotData.totalMomentY.map(v => v - meanMomentY);
+                }
+                
+                if (plotData.totalMomentZ.length > 0) {
+                    const meanMomentZ = plotData.totalMomentZ.reduce((a, b) => a + b, 0) / plotData.totalMomentZ.length;
+                    displayTotalMomentZ = plotData.totalMomentZ.map(v => v - meanMomentZ);
+                }
             }
             
             // Calculate dynamic x-axis bounds based on current data
@@ -1902,12 +2094,12 @@
             liftChart.options.scales.x.min = xMin;
             liftChart.options.scales.x.max = xMax;
             for (let i = 0; i < turbineParams.numBlades; i++) {
-                if (liftChart.data.datasets[i] && plotData.bladeLift[i]) {
-                    liftChart.data.datasets[i].data = plotData.bladeLift[i];
+                if (liftChart.data.datasets[i] && displayBladeLift[i]) {
+                    liftChart.data.datasets[i].data = displayBladeLift[i];
                 }
             }
             if (liftChart.data.datasets[turbineParams.numBlades]) {
-                liftChart.data.datasets[turbineParams.numBlades].data = plotData.totalLift;
+                liftChart.data.datasets[turbineParams.numBlades].data = displayTotalLift;
             }
             // Store current azimuth for drawing indicator
             liftChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
@@ -1918,12 +2110,12 @@
             momentYChart.options.scales.x.min = xMin;
             momentYChart.options.scales.x.max = xMax;
             for (let i = 0; i < turbineParams.numBlades; i++) {
-                if (momentYChart.data.datasets[i] && plotData.bladeMomentY[i]) {
-                    momentYChart.data.datasets[i].data = plotData.bladeMomentY[i];
+                if (momentYChart.data.datasets[i] && displayBladeMomentY[i]) {
+                    momentYChart.data.datasets[i].data = displayBladeMomentY[i];
                 }
             }
             if (momentYChart.data.datasets[turbineParams.numBlades]) {
-                momentYChart.data.datasets[turbineParams.numBlades].data = plotData.totalMomentY;
+                momentYChart.data.datasets[turbineParams.numBlades].data = displayTotalMomentY;
             }
             momentYChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
             momentYChart.update('none');
@@ -1933,12 +2125,12 @@
             momentZChart.options.scales.x.min = xMin;
             momentZChart.options.scales.x.max = xMax;
             for (let i = 0; i < turbineParams.numBlades; i++) {
-                if (momentZChart.data.datasets[i] && plotData.bladeMomentZ[i]) {
-                    momentZChart.data.datasets[i].data = plotData.bladeMomentZ[i];
+                if (momentZChart.data.datasets[i] && displayBladeMomentZ[i]) {
+                    momentZChart.data.datasets[i].data = displayBladeMomentZ[i];
                 }
             }
             if (momentZChart.data.datasets[turbineParams.numBlades]) {
-                momentZChart.data.datasets[turbineParams.numBlades].data = plotData.totalMomentZ;
+                momentZChart.data.datasets[turbineParams.numBlades].data = displayTotalMomentZ;
             }
             momentZChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
             momentZChart.update('none');
@@ -2007,132 +2199,148 @@
             const totalMomentYWithPercent = calculatePercent(totalMomentYFourier);
             const totalMomentZWithPercent = calculatePercent(totalMomentZFourier);
             
-            // Build HTML
-            let html = '';
+            // Build HTML for each tab separately
+            
+            // Helper function to create Fourier series equation
+            function createFourierEquation(label, fourier) {
+                const A0 = fourier.find(h => h.harmonic === 0);
+                const harmonics = fourier.filter(h => h.harmonic > 0);
+                
+                let eq = `<div style="background: #f0f0f0; padding: 8px; margin: 5px 0; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.85em; overflow-x: auto;">`;
+                eq += `<strong>${label} =</strong> `;
+                
+                if (A0) {
+                    eq += `${A0.amplitude.toFixed(2)}`;
+                } else {
+                    eq += `0`;
+                }
+                
+                harmonics.forEach((h, idx) => {
+                    const sign = h.amplitude >= 0 ? ' + ' : ' - ';
+                    const absAmp = Math.abs(h.amplitude).toFixed(2);
+                    eq += `${sign}${absAmp}·sin(${h.harmonic}ψ)`;
+                });
+                
+                eq += `</div>`;
+                return eq;
+            }
+            
+            // === THRUST TAB ===
+            let thrustHtml = '';
             
             // Blade 1 Thrust
-            html += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Thrust</h5>';
-            html += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
-            html += '<thead><tr style="background: #ddd;">';
-            html += '<th style="padding: 3px; text-align: center;">nP</th>';
-            html += '<th style="padding: 3px; text-align: right;">Amp</th>';
-            html += '<th style="padding: 3px; text-align: right;">%</th>';
-            html += '</tr></thead><tbody>';
+            thrustHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Thrust</h5>';
+            thrustHtml += createFourierEquation('T', blade1ThrustFourier);
+            thrustHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            thrustHtml += '<thead><tr style="background: #ddd;">';
+            thrustHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            thrustHtml += '<th style="padding: 3px; text-align: right;">Amp</th>';
+            thrustHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            thrustHtml += '</tr></thead><tbody>';
             blade1ThrustWithPercent.forEach((h, idx) => {
-                html += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
-                html += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
-                html += '</tr>';
+                thrustHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                thrustHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                thrustHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                thrustHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                thrustHtml += '</tr>';
             });
-            html += '</tbody></table>';
+            thrustHtml += '</tbody></table>';
             
             // Total Rotor Thrust
-            html += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor Thrust</h5>';
-            html += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
-            html += '<thead><tr style="background: #ddd;">';
-            html += '<th style="padding: 3px; text-align: center;">nP</th>';
-            html += '<th style="padding: 3px; text-align: right;">Amp</th>';
-            html += '<th style="padding: 3px; text-align: right;">%</th>';
-            html += '</tr></thead><tbody>';
+            thrustHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor Thrust</h5>';
+            thrustHtml += createFourierEquation('T_total', totalThrustFourier);
+            thrustHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            thrustHtml += '<thead><tr style="background: #ddd;">';
+            thrustHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            thrustHtml += '<th style="padding: 3px; text-align: right;">Amp</th>';
+            thrustHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            thrustHtml += '</tr></thead><tbody>';
             totalThrustWithPercent.forEach((h, idx) => {
-                html += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
-                html += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
-                html += '</tr>';
+                thrustHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                thrustHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                thrustHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                thrustHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                thrustHtml += '</tr>';
             });
-            html += '</tbody></table>';
+            thrustHtml += '</tbody></table>';
+            
+            // === MOMENT Y TAB ===
+            let momentYHtml = '';
             
             // Blade 1 Yawing Moment
-            html += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Blade 1 M_y (Yawing)</h5>';
-            html += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
-            html += '<thead><tr style="background: #ddd;">';
-            html += '<th style="padding: 3px; text-align: center;">nP</th>';
-            html += '<th style="padding: 3px; text-align: right;">Amp</th>';
-            html += '<th style="padding: 3px; text-align: right;">%</th>';
-            html += '</tr></thead><tbody>';
+            momentYHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 M_y (Yawing)</h5>';
+            momentYHtml += createFourierEquation('M_y', blade1MomentYFourier);
+            momentYHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            momentYHtml += '<thead><tr style="background: #ddd;">';
+            momentYHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            momentYHtml += '<th style="padding: 3px; text-align: right;">Amp</th>';
+            momentYHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            momentYHtml += '</tr></thead><tbody>';
             blade1MomentYWithPercent.forEach((h, idx) => {
-                html += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
-                html += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
-                html += '</tr>';
+                momentYHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                momentYHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                momentYHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                momentYHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                momentYHtml += '</tr>';
             });
-            html += '</tbody></table>';
-            
-            // Blade 1 Nodding Moment
-            html += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Blade 1 M_z (Nodding)</h5>';
-            html += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
-            html += '<thead><tr style="background: #ddd;">';
-            html += '<th style="padding: 3px; text-align: center;">nP</th>';
-            html += '<th style="padding: 3px; text-align: right;">Amp</th>';
-            html += '<th style="padding: 3px; text-align: right;">%</th>';
-            html += '</tr></thead><tbody>';
-            blade1MomentZWithPercent.forEach((h, idx) => {
-                html += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
-                html += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
-                html += '</tr>';
-            });
-            html += '</tbody></table>';
+            momentYHtml += '</tbody></table>';
             
             // Total Rotor Yawing Moment
-            html += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_y (Yawing)</h5>';
-            html += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
-            html += '<thead><tr style="background: #ddd;">';
-            html += '<th style="padding: 3px; text-align: center;">nP</th>';
-            html += '<th style="padding: 3px; text-align: right;">Amp</th>';
-            html += '<th style="padding: 3px; text-align: right;">%</th>';
-            html += '</tr></thead><tbody>';
+            momentYHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_y (Yawing)</h5>';
+            momentYHtml += createFourierEquation('M_y,total', totalMomentYFourier);
+            momentYHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            momentYHtml += '<thead><tr style="background: #ddd;">';
+            momentYHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            momentYHtml += '<th style="padding: 3px; text-align: right;">Amp</th>';
+            momentYHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            momentYHtml += '</tr></thead><tbody>';
             totalMomentYWithPercent.forEach((h, idx) => {
-                html += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
-                html += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
-                html += '</tr>';
+                momentYHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                momentYHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                momentYHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                momentYHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                momentYHtml += '</tr>';
             });
-            html += '</tbody></table>';
+            momentYHtml += '</tbody></table>';
+            
+            // === MOMENT Z TAB ===
+            let momentZHtml = '';
+            
+            // Blade 1 Nodding Moment
+            momentZHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 M_z (Nodding)</h5>';
+            momentZHtml += createFourierEquation('M_z', blade1MomentZFourier);
+            momentZHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            momentZHtml += '<thead><tr style="background: #ddd;">';
+            momentZHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            momentZHtml += '<th style="padding: 3px; text-align: right;">Amp</th>';
+            momentZHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            momentZHtml += '</tr></thead><tbody>';
+            blade1MomentZWithPercent.forEach((h, idx) => {
+                momentZHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                momentZHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                momentZHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                momentZHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                momentZHtml += '</tr>';
+            });
+            momentZHtml += '</tbody></table>';
             
             // Total Rotor Nodding Moment
-            html += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_z (Nodding)</h5>';
-            html += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
-            html += '<thead><tr style="background: #ddd;">';
-            html += '<th style="padding: 3px; text-align: center;">nP</th>';
-            html += '<th style="padding: 3px; text-align: right;">Amp</th>';
-            html += '<th style="padding: 3px; text-align: right;">%</th>';
-            html += '</tr></thead><tbody>';
+            momentZHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_z (Nodding)</h5>';
+            momentZHtml += createFourierEquation('M_z,total', totalMomentZFourier);
+            momentZHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            momentZHtml += '<thead><tr style="background: #ddd;">';
+            momentZHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            momentZHtml += '<th style="padding: 3px; text-align: right;">Amp</th>';
+            momentZHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            momentZHtml += '</tr></thead><tbody>';
             totalMomentZWithPercent.forEach((h, idx) => {
-                html += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
-                html += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
-                html += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
-                html += '</tr>';
+                momentZHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                momentZHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                momentZHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                momentZHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                momentZHtml += '</tr>';
             });
-            html += '</tbody></table>';
-            
-            // Split content into three separate sections
-            // Thrust tab gets blade1 and total thrust
-            let thrustHtml = '';
-            thrustHtml += html.substring(html.indexOf('<h5'), html.indexOf('Blade 1 M_y'));
-            
-            // Moment Y tab gets blade1 and total moment Y
-            let momentYHtml = '';
-            const myStart = html.indexOf('Blade 1 M_y');
-            const myEnd = html.indexOf('Blade 1 M_z');
-            momentYHtml += html.substring(myStart, myEnd);
-            const totalMyStart = html.indexOf('Total Rotor M_y');
-            const totalMyEnd = html.indexOf('Total Rotor M_z', totalMyStart);
-            momentYHtml += html.substring(totalMyStart, totalMyEnd);
-            
-            // Moment Z tab gets blade1 and total moment Z
-            let momentZHtml = '';
-            const mzStart = html.indexOf('Blade 1 M_z');
-            const mzEnd = html.indexOf('Total Rotor M_y');
-            momentZHtml += html.substring(mzStart, mzEnd);
-            const totalMzStart = html.indexOf('Total Rotor M_z');
-            momentZHtml += html.substring(totalMzStart);
+            momentZHtml += '</tbody></table>';
             
             thrustContent.innerHTML = thrustHtml;
             momentYContent.innerHTML = momentYHtml;
@@ -2460,8 +2668,50 @@
             plugins: [currentPositionPlugin, tdcMarkerPlugin]
         });
         
+        // Spanwise loading chart
+        const spanwiseChartCanvas = document.getElementById('spanwise-chart');
+        spanwiseChartCanvas.height = 450; // Set canvas height
+        const spanwiseChartCtx = spanwiseChartCanvas.getContext('2d');
+        let spanwiseChart = new Chart(spanwiseChartCtx, {
+            type: 'line',
+            data: {
+                labels: [], // Will be % span positions
+                datasets: [] // Will have multiple lines for different azimuths
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Blade Span (%)' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Thrust (N/m)' },
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    title: { display: false }
+                }
+            }
+        });
+        
+        // Section analysis chart (for velocity vectors)
+        const sectionChartCanvas = document.getElementById('section-chart');
+        sectionChartCanvas.height = 400; // Set canvas height
+        const sectionChartCtx = sectionChartCanvas.getContext('2d');
+        let sectionChart = null; // Will be drawn manually with canvas 2D API
+        
         // Now that charts are initialized, create the initial blades
         updateBladeCount();
+        
+        // Initial update of spanwise charts (after a short delay to ensure blades are created)
+        setTimeout(() => {
+            updateSpanwiseChart();
+            updateSectionDiagram();
+        }, 100);
         
         // Event listeners
         document.getElementById('wind-speed').addEventListener('input', (e) => {
@@ -2539,6 +2789,11 @@
         
         document.getElementById('show-heatmap').addEventListener('change', (e) => {
             turbineParams.showHeatmap = e.target.checked;
+        });
+        
+        document.getElementById('remove-mean').addEventListener('change', (e) => {
+            turbineParams.removeMean = e.target.checked;
+            resetFourierCollection();
         });
         
         document.getElementById('show-vectors').addEventListener('change', (e) => {
@@ -2847,6 +3102,288 @@
             output.innerHTML = html;
         }
         
+        // Update spanwise loading chart
+        function updateSpanwiseChart() {
+            if (!blades || blades.length === 0) {
+                console.log('updateSpanwiseChart: No blades available');
+                return;
+            }
+            
+            const blade = blades[0]; // Use primary blade
+            if (!blade.children || blade.children.length === 0) {
+                console.log('updateSpanwiseChart: Blade has no children');
+                return;
+            }
+            
+            console.log('updateSpanwiseChart: Processing', blade.children.length, 'segments');
+            
+            const currentAzimuth = (rotorGroup.rotation.x * 180 / Math.PI) % 360;
+            
+            // Sample azimuths to show (every 45 degrees)
+            const sampleAzimuths = [0, 45, 90, 135, 180, 225, 270, 315];
+            
+            // Get spanwise positions
+            const spanPositions = [];
+            const thrustAtAzimuths = {}; // { azimuth: [thrust values along span] }
+            
+            blade.children.forEach((segment, idx) => {
+                const r = turbineParams.bladeRadius * (0.1 + 0.9 * idx / blade.children.length);
+                const spanPercent = (r / turbineParams.bladeRadius * 100);
+                spanPositions.push(spanPercent);
+            });
+            
+            // Calculate thrust for each azimuth
+            sampleAzimuths.forEach(azimuth => {
+                thrustAtAzimuths[azimuth] = blade.children.map(segment => {
+                    const r = segment.userData.radius || 0;
+                    const chord = segment.userData.chord || 0;
+                    const twist = segment.userData.twist || 0;
+                    const azimuthRad = azimuth * Math.PI / 180;
+                    
+                    // Calculate velocity components
+                    const V = turbineParams.windSpeed;
+                    const inflowRadians = turbineParams.inflowAngle * Math.PI / 180;
+                    const yawRadians = turbineParams.yawAngle * Math.PI / 180;
+                    
+                    const V_x = V * Math.sin(yawRadians);
+                    const V_y = V * Math.sin(inflowRadians) * Math.cos(yawRadians);
+                    const V_z = V * Math.cos(inflowRadians) * Math.cos(yawRadians);
+                    
+                    const omega = turbineParams.shaftSpeed * 2 * Math.PI / 60;
+                    const U = omega * r;
+                    
+                    const V_inplane_tangential = V_x * Math.cos(azimuthRad) - V_y * Math.sin(azimuthRad);
+                    const V_normal = V_z;
+                    
+                    const Vt = U - V_inplane_tangential;
+                    const Vn = V_normal;
+                    const V_total = Math.sqrt(Vt * Vt + Vn * Vn);
+                    
+                    const phi = Math.atan2(Vn, Vt);
+                    const aoa = twist - phi * 180 / Math.PI;
+                    
+                    const Cl = 2 * Math.PI * aoa * Math.PI / 180;
+                    const Cd = 0.01;
+                    
+                    const L = 0.5 * 1.225 * V_total * V_total * chord * Cl;
+                    const D = 0.5 * 1.225 * V_total * V_total * chord * Cd;
+                    
+                    const thrust_per_unit = L * Math.cos(phi) + D * Math.sin(phi);
+                    
+                    return thrust_per_unit;
+                });
+            });
+            
+            // Update chart
+            spanwiseChart.data.labels = spanPositions.map(p => p.toFixed(0));
+            spanwiseChart.data.datasets = sampleAzimuths.map((azimuth, idx) => {
+                const colors = ['#ff6384', '#36a2eb', '#ffce56', '#4bc0c0', '#9966ff', '#ff9f40', '#ff6384', '#c9cbcf'];
+                return {
+                    label: `ψ = ${azimuth}°`,
+                    data: thrustAtAzimuths[azimuth],
+                    borderColor: colors[idx % colors.length],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    tension: 0.2
+                };
+            });
+            
+            console.log('updateSpanwiseChart: Updated chart with', spanwiseChart.data.datasets.length, 'datasets,', spanwiseChart.data.labels.length, 'points');
+            spanwiseChart.update('none');
+        }
+        
+        // Update section diagram with velocity vectors
+        function updateSectionDiagram() {
+            const canvas = document.getElementById('section-chart');
+            if (!canvas) {
+                console.log('updateSectionDiagram: Canvas not found');
+                return;
+            }
+            
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width = canvas.offsetWidth;
+            const height = canvas.height = 400;
+            
+            console.log('updateSectionDiagram: Canvas size', width, 'x', height);
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            // Get current radial station from load traces slider
+            const stationPercent = parseFloat(document.getElementById('radial-station').value);
+            const r = turbineParams.bladeRadius * stationPercent / 100;
+            
+            // Get blade segment at this station
+            if (!blades || blades.length === 0) return;
+            const blade = blades[0];
+            const segmentIndex = Math.floor((stationPercent - 10) / 85 * blade.children.length);
+            const segment = blade.children[Math.max(0, Math.min(segmentIndex, blade.children.length - 1))];
+            
+            if (!segment) return;
+            
+            const chord = segment.userData.chord || 1;
+            const twist = segment.userData.twist || 0;
+            const azimuth = (rotorGroup.rotation.x * 180 / Math.PI) % 360;
+            const azimuthRad = azimuth * Math.PI / 180;
+            
+            // Calculate velocity components
+            const V = turbineParams.windSpeed;
+            const inflowRadians = turbineParams.inflowAngle * Math.PI / 180;
+            const yawRadians = turbineParams.yawAngle * Math.PI / 180;
+            
+            const V_x = V * Math.sin(yawRadians);
+            const V_y = V * Math.sin(inflowRadians) * Math.cos(yawRadians);
+            const V_z = V * Math.cos(inflowRadians) * Math.cos(yawRadians);
+            
+            const omega = turbineParams.shaftSpeed * 2 * Math.PI / 60;
+            const U = omega * r;
+            
+            const V_inplane_tangential = V_x * Math.cos(azimuthRad) - V_y * Math.sin(azimuthRad);
+            const V_normal = V_z;
+            
+            const Vt = U - V_inplane_tangential;
+            const Vn = V_normal;
+            const V_total = Math.sqrt(Vt * Vt + Vn * Vn);
+            
+            const phi = Math.atan2(Vn, Vt);
+            const aoa = twist - phi * 180 / Math.PI;
+            
+            const Cl = 2 * Math.PI * aoa * Math.PI / 180;
+            const Cd = 0.01;
+            
+            const L = 0.5 * 1.225 * V_total * V_total * chord * Cl;
+            const D = 0.5 * 1.225 * V_total * V_total * chord * Cd;
+            
+            const thrust = L * Math.cos(phi) + D * Math.sin(phi);
+            
+            // Update info panel
+            document.getElementById('section-azimuth').textContent = azimuth.toFixed(1) + '°';
+            document.getElementById('section-aoa').textContent = aoa.toFixed(1) + '°';
+            document.getElementById('section-vtotal').textContent = V_total.toFixed(2) + ' m/s';
+            document.getElementById('section-vtang').textContent = Vt.toFixed(2) + ' m/s';
+            document.getElementById('section-vnorm').textContent = Vn.toFixed(2) + ' m/s';
+            document.getElementById('section-thrust').textContent = thrust.toFixed(2) + ' N';
+            
+            // Draw airfoil section (simplified NACA shape)
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const chordScale = 100; // pixels per unit chord
+            const chordLength = chord * chordScale;
+            
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(-twist * Math.PI / 180); // Apply twist
+            
+            // Draw airfoil
+            ctx.beginPath();
+            ctx.moveTo(-chordLength/2, 0);
+            for (let i = 0; i <= 100; i++) {
+                const x = -chordLength/2 + i * chordLength / 100;
+                const xNorm = i / 100;
+                // Simple symmetric airfoil shape
+                const y = chordLength * 0.12 * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * xNorm * xNorm * xNorm - 0.1015 * xNorm * xNorm * xNorm * xNorm);
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            for (let i = 100; i >= 0; i--) {
+                const x = -chordLength/2 + i * chordLength / 100;
+                const xNorm = i / 100;
+                const y = -chordLength * 0.12 * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * xNorm * xNorm * xNorm - 0.1015 * xNorm * xNorm * xNorm * xNorm);
+                ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = '#ddd';
+            ctx.fill();
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Draw chord line
+            ctx.beginPath();
+            ctx.moveTo(-chordLength/2, 0);
+            ctx.lineTo(chordLength/2, 0);
+            ctx.strokeStyle = '#999';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            ctx.restore();
+            
+            // Draw velocity vectors (in global frame)
+            const vectorScale = 3; // pixels per m/s
+            const vecOriginX = centerX;
+            const vecOriginY = centerY;
+            
+            // V_tangential (horizontal, to the left in rotor frame)
+            drawVector(ctx, vecOriginX, vecOriginY, -Vt * vectorScale, 0, '#ff6384', 'V_t');
+            
+            // V_normal (vertical, upward is positive inflow)
+            drawVector(ctx, vecOriginX, vecOriginY, 0, -Vn * vectorScale, '#36a2eb', 'V_n');
+            
+            // V_total (resultant)
+            drawVector(ctx, vecOriginX, vecOriginY, -Vt * vectorScale, -Vn * vectorScale, '#4bc0c0', 'V_total', 3);
+            
+            // Draw angle of attack reference
+            ctx.save();
+            ctx.translate(vecOriginX, vecOriginY);
+            ctx.rotate(-twist * Math.PI / 180);
+            
+            // Draw angle arc
+            const arcRadius = 40;
+            ctx.beginPath();
+            ctx.arc(0, 0, arcRadius, 0, -phi, phi < 0);
+            ctx.strokeStyle = '#9966ff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Label AoA
+            const midAngle = -phi / 2;
+            const labelX = arcRadius * 1.3 * Math.cos(midAngle);
+            const labelY = arcRadius * 1.3 * Math.sin(midAngle);
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#9966ff';
+            ctx.fillText('φ', labelX, labelY);
+            
+            ctx.restore();
+        }
+        
+        // Helper function to draw labeled vector
+        function drawVector(ctx, x, y, dx, dy, color, label, width = 2) {
+            const length = Math.sqrt(dx * dx + dy * dy);
+            if (length < 1) return;
+            
+            const angle = Math.atan2(dy, dx);
+            const headLength = 10;
+            
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + dx, y + dy);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.stroke();
+            
+            // Arrowhead
+            ctx.beginPath();
+            ctx.moveTo(x + dx, y + dy);
+            ctx.lineTo(x + dx - headLength * Math.cos(angle - Math.PI / 6), y + dy - headLength * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(x + dx - headLength * Math.cos(angle + Math.PI / 6), y + dy - headLength * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+            
+            // Label
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = color;
+            const labelOffset = 15;
+            const labelX = x + dx + labelOffset * Math.cos(angle);
+            const labelY = y + dy + labelOffset * Math.sin(angle);
+            ctx.fillText(label, labelX, labelY);
+        }
+        
         // Perform DFT analysis on a signal
         function analyzeFourier(signal, maxHarmonic = 4) {
             const N = signal.length;
@@ -2978,6 +3515,7 @@
         makeDraggable(document.getElementById('stats'), 'h3');
         makeDraggable(document.getElementById('legend'), 'h3');
         makeDraggable(document.getElementById('plot-panel'), '.plot-header');
+        makeDraggable(document.getElementById('spanwise-panel'), '.plot-header');
         
         // Minimize controls panel
         document.getElementById('minimize-btn').addEventListener('click', () => {
@@ -3042,6 +3580,50 @@
             });
         });
         
+        // Spanwise panel tab switching
+        document.querySelectorAll('.spanwise-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabName = btn.getAttribute('data-tab');
+                
+                // Update button states
+                document.querySelectorAll('.spanwise-tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // Update tab content visibility
+                document.querySelectorAll('.spanwise-tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(tabName + '-tab').classList.add('active');
+                
+                // Force chart resize when switching tabs
+                setTimeout(() => {
+                    if (tabName === 'loading' && typeof spanwiseChart !== 'undefined') {
+                        spanwiseChart.resize();
+                    } else if (tabName === 'section') {
+                        updateSectionDiagram();
+                    }
+                }, 100);
+            });
+        });
+        
+        // Spanwise panel minimize/maximize
+        document.getElementById('minimize-spanwise-btn').addEventListener('click', function() {
+            const panel = document.getElementById('spanwise-panel');
+            const btn = this;
+            
+            if (panel.classList.contains('minimized')) {
+                // Expand
+                panel.classList.remove('minimized');
+                btn.textContent = '−';
+            } else {
+                // Minimize - clear inline styles first
+                panel.style.width = '';
+                panel.style.height = '';
+                panel.classList.add('minimized');
+                btn.textContent = '+';
+            }
+        });
+        
         // Window resize
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -3069,6 +3651,9 @@
                 return;
             }
             lastFrameTime = currentTime;
+            
+            // Increment frame counter
+            frameCount++;
             
             // Update blade loads BEFORE rotating (so loads match current position)
             updateBladeLoads();
@@ -3141,7 +3726,7 @@
         
         document.getElementById('display-toggle').addEventListener('click', () => {
             const btn = document.getElementById('display-toggle');
-            const panels = ['controls-panel', 'stats', 'legend', 'plot-panel'];
+            const panels = ['controls-panel', 'stats', 'legend', 'plot-panel', 'spanwise-panel'];
             
             if (!displayState.modalsHidden) {
                 // Hide all modals
