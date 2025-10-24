@@ -435,7 +435,7 @@
             </div>
             
             <div class="control-group">
-                <label>Vector Display:</label>
+                <label>Load Annotations:</label>
                 <select id="vector-mode">
                     <option value="all">All Blades</option>
                     <option value="single">Single Blade</option>
@@ -487,9 +487,11 @@
             </div>
             
             <div id="loading-tab" class="spanwise-tab-content active">
-                <div style="padding: 10px;">
-                    <p style="font-size: 0.9em; margin: 5px 0;">Thrust distribution along blade span at different azimuth angles</p>
-                    <canvas id="spanwise-chart"></canvas>
+                <div style="padding: 10px; height: 100%;">
+                    <p style="font-size: 0.9em; margin: 5px 0 10px 0;">Thrust distribution along blade span</p>
+                    <div style="height: 450px;">
+                        <canvas id="spanwise-chart"></canvas>
+                    </div>
                 </div>
             </div>
             
@@ -1040,6 +1042,10 @@
                 
                 const chord = 1.5 * (1 - i / numSegments) + 0.3;
                 
+                // Calculate twist for this segment (linear twist from root to tip)
+                const spanFraction = i / numSegments;
+                const twist = turbineParams.bladeTwist * (1 - spanFraction); // More twist at root, less at tip
+                
                 const segmentGeometry = new THREE.BoxGeometry(0.2, segmentLength, chord);
                 const segmentMaterial = new THREE.MeshPhongMaterial({ 
                     color: 0x4444ff,
@@ -1053,6 +1059,7 @@
                 
                 segment.userData.radius = r + segmentLength / 2;
                 segment.userData.chord = chord;
+                segment.userData.twist = twist;
                 
                 pitchGroup.add(segment);
                 segments.push(segment);
@@ -1079,6 +1086,11 @@
                 blade.rotation.x = (i * 2 * Math.PI) / turbineParams.numBlades;
                 rotorGroup.add(blade);
                 blades.push(blade);
+                
+                // Tag all segments with their blade index
+                blade.segments.forEach(segment => {
+                    segment.userData.bladeIndex = i;
+                });
             }
             
             // Reset plot data when blade count changes
@@ -1443,7 +1455,10 @@
             // Autoscale and color segments
             const loadRange = maxLoad - minLoad;
             bladeSegments.forEach(segment => {
-                if (turbineParams.showHeatmap) {
+                // Check if we should color this segment based on vectorMode
+                const shouldColor = turbineParams.vectorMode === 'all' || segment.userData.bladeIndex === 0;
+                
+                if (turbineParams.showHeatmap && shouldColor) {
                     const normalizedLoad = loadRange > 0 ? (segment.userData.load - minLoad) / loadRange : 0;
                     const color = getLoadColor(normalizedLoad);
                     if (isPhotoMode){
@@ -1456,7 +1471,7 @@
                         segment.material.color = color.clone ? color.clone() : color;
                     }
                 } else {
-                    // Reset to neutral color when heatmap is off
+                    // Reset to neutral color when heatmap is off or not in display mode
                     const neutralColor = new THREE.Color(0xcccccc);
                     if (isPhotoMode && segment.material.emissive) {
                         segment.material.color.copy(neutralColor);
@@ -2000,9 +2015,11 @@
             // Update charts
             updateCharts();
             
-            // Update spanwise analysis displays (less frequently)
-            if (frameCount % 5 === 0) { // Update every 5 frames
+            // Update spanwise and section analysis displays (update spanwise more frequently)
+            if (frameCount % 3 === 0) { // Update spanwise every 3 frames (20 times per second at 60fps)
                 updateSpanwiseChart();
+            }
+            if (frameCount % 10 === 0) { // Update section every 10 frames
                 updateSectionDiagram();
             }
         }
@@ -2668,15 +2685,22 @@
             plugins: [currentPositionPlugin, tdcMarkerPlugin]
         });
         
-        // Spanwise loading chart
+        // Spanwise loading chart - empty scatter plot
         const spanwiseChartCanvas = document.getElementById('spanwise-chart');
-        spanwiseChartCanvas.height = 450; // Set canvas height
         const spanwiseChartCtx = spanwiseChartCanvas.getContext('2d');
-        let spanwiseChart = new Chart(spanwiseChartCtx, {
-            type: 'line',
+        const spanwiseChart = new Chart(spanwiseChartCtx, {
+            type: 'scatter',
             data: {
-                labels: [], // Will be % span positions
-                datasets: [] // Will have multiple lines for different azimuths
+                datasets: [{
+                    label: 'Thrust',
+                    data: [],
+                    backgroundColor: 'transparent',
+                    borderColor: '#4bc0c0',
+                    pointRadius: 0,
+                    showLine: true,
+                    borderWidth: 2,
+                    tension: 0.4
+                }]
             },
             options: {
                 responsive: true,
@@ -2684,16 +2708,20 @@
                 animation: false,
                 scales: {
                     x: {
-                        title: { display: true, text: 'Blade Span (%)' }
+                        type: 'linear',
+                        title: { display: true, text: 'Blade Span (%)' },
+                        min: 0,
+                        max: 100
                     },
                     y: {
-                        title: { display: true, text: 'Thrust (N/m)' },
-                        beginAtZero: true
+                        type: 'linear',
+                        title: { display: true, text: 'Thrust per unit length (N/m)' },
+                        min: -50,
+                        max: 200
                     }
                 },
                 plugins: {
-                    legend: { display: true, position: 'top' },
-                    title: { display: false }
+                    legend: { display: false }
                 }
             }
         });
@@ -2707,8 +2735,9 @@
         // Now that charts are initialized, create the initial blades
         updateBladeCount();
         
-        // Initial update of spanwise charts (after a short delay to ensure blades are created)
+        // Initial update of spanwise and section analysis (after a short delay to ensure blades are created)
         setTimeout(() => {
+            calculateSpanwiseYAxisRange(); // Set y-axis based on actual load range
             updateSpanwiseChart();
             updateSectionDiagram();
         }, 100);
@@ -2718,6 +2747,7 @@
             turbineParams.windSpeed = parseFloat(e.target.value);
             document.getElementById('wind-speed-value').textContent = turbineParams.windSpeed.toFixed(1);
             resetFourierCollection();
+            setTimeout(() => calculateSpanwiseYAxisRange(), 50); // Recalculate y-axis for new wind speed
         });
         
         document.getElementById('shaft-speed').addEventListener('input', (e) => {
@@ -2766,12 +2796,14 @@
             document.getElementById('yaw-value').textContent = turbineParams.yawAngle.toFixed(1);
             // Don't rotate nacelle - yaw now represents wind direction, turbine stays fixed
             resetFourierCollection();
+            setTimeout(() => calculateSpanwiseYAxisRange(), 50); // Recalculate y-axis for new yaw
         });
         
         document.getElementById('inflow').addEventListener('input', (e) => {
             turbineParams.inflowAngle = parseFloat(e.target.value);
             document.getElementById('inflow-value').textContent = turbineParams.inflowAngle.toFixed(1);
             resetFourierCollection();
+            setTimeout(() => calculateSpanwiseYAxisRange(), 50); // Recalculate y-axis for new inflow
         });
         
         document.getElementById('show-axes').addEventListener('change', (e) => {
@@ -3102,95 +3134,74 @@
             output.innerHTML = html;
         }
         
-        // Update spanwise loading chart
+        // Update spanwise loading chart with blade 1 data
         function updateSpanwiseChart() {
-            if (!blades || blades.length === 0) {
-                console.log('updateSpanwiseChart: No blades available');
-                return;
-            }
+            if (!blades || blades.length === 0) return;
+            if (!spanwiseChart) return;
             
-            const blade = blades[0]; // Use primary blade
-            if (!blade.children || blade.children.length === 0) {
-                console.log('updateSpanwiseChart: Blade has no children');
-                return;
-            }
+            const blade = blades[0]; // Blade 1
+            if (!blade.segments || blade.segments.length === 0) return;
             
-            console.log('updateSpanwiseChart: Processing', blade.children.length, 'segments');
+            // Collect data points from already-calculated thrust values
+            const dataPoints = [];
             
-            const currentAzimuth = (rotorGroup.rotation.x * 180 / Math.PI) % 360;
+            blade.segments.forEach(segment => {
+                const r = segment.userData.radius || 0;
+                const thrust = segment.userData.thrust || 0;
+                
+                // Calculate spanwise position as percentage
+                const spanPercent = (r / turbineParams.bladeRadius) * 100;
+                
+                dataPoints.push({ x: spanPercent, y: thrust });
+            });
             
-            // Sample azimuths to show (every 45 degrees)
+            // Update chart data
+            spanwiseChart.data.datasets[0].data = dataPoints;
+            spanwiseChart.update('none');
+        }
+        
+        // Calculate appropriate y-axis range for spanwise chart based on actual loads
+        function calculateSpanwiseYAxisRange() {
+            let minThrust = Infinity;
+            let maxThrust = -Infinity;
+            
+            // Sample various azimuth positions to find full range
+            const originalRotation = rotorGroup.rotation.x;
             const sampleAzimuths = [0, 45, 90, 135, 180, 225, 270, 315];
             
-            // Get spanwise positions
-            const spanPositions = [];
-            const thrustAtAzimuths = {}; // { azimuth: [thrust values along span] }
-            
-            blade.children.forEach((segment, idx) => {
-                const r = turbineParams.bladeRadius * (0.1 + 0.9 * idx / blade.children.length);
-                const spanPercent = (r / turbineParams.bladeRadius * 100);
-                spanPositions.push(spanPercent);
+            sampleAzimuths.forEach(azimuthDeg => {
+                const azimuthRad = azimuthDeg * Math.PI / 180;
+                rotorGroup.rotation.x = azimuthRad;
+                
+                // Calculate loads at this azimuth
+                updateBladeLoads();
+                
+                // Check all segments
+                if (blades.length > 0 && blades[0].segments) {
+                    blades[0].segments.forEach(segment => {
+                        const thrust = segment.userData.thrust || 0;
+                        if (thrust < minThrust) minThrust = thrust;
+                        if (thrust > maxThrust) maxThrust = thrust;
+                    });
+                }
             });
             
-            // Calculate thrust for each azimuth
-            sampleAzimuths.forEach(azimuth => {
-                thrustAtAzimuths[azimuth] = blade.children.map(segment => {
-                    const r = segment.userData.radius || 0;
-                    const chord = segment.userData.chord || 0;
-                    const twist = segment.userData.twist || 0;
-                    const azimuthRad = azimuth * Math.PI / 180;
-                    
-                    // Calculate velocity components
-                    const V = turbineParams.windSpeed;
-                    const inflowRadians = turbineParams.inflowAngle * Math.PI / 180;
-                    const yawRadians = turbineParams.yawAngle * Math.PI / 180;
-                    
-                    const V_x = V * Math.sin(yawRadians);
-                    const V_y = V * Math.sin(inflowRadians) * Math.cos(yawRadians);
-                    const V_z = V * Math.cos(inflowRadians) * Math.cos(yawRadians);
-                    
-                    const omega = turbineParams.shaftSpeed * 2 * Math.PI / 60;
-                    const U = omega * r;
-                    
-                    const V_inplane_tangential = V_x * Math.cos(azimuthRad) - V_y * Math.sin(azimuthRad);
-                    const V_normal = V_z;
-                    
-                    const Vt = U - V_inplane_tangential;
-                    const Vn = V_normal;
-                    const V_total = Math.sqrt(Vt * Vt + Vn * Vn);
-                    
-                    const phi = Math.atan2(Vn, Vt);
-                    const aoa = twist - phi * 180 / Math.PI;
-                    
-                    const Cl = 2 * Math.PI * aoa * Math.PI / 180;
-                    const Cd = 0.01;
-                    
-                    const L = 0.5 * 1.225 * V_total * V_total * chord * Cl;
-                    const D = 0.5 * 1.225 * V_total * V_total * chord * Cd;
-                    
-                    const thrust_per_unit = L * Math.cos(phi) + D * Math.sin(phi);
-                    
-                    return thrust_per_unit;
-                });
-            });
+            // Restore original rotation
+            rotorGroup.rotation.x = originalRotation;
+            updateBladeLoads();
             
-            // Update chart
-            spanwiseChart.data.labels = spanPositions.map(p => p.toFixed(0));
-            spanwiseChart.data.datasets = sampleAzimuths.map((azimuth, idx) => {
-                const colors = ['#ff6384', '#36a2eb', '#ffce56', '#4bc0c0', '#9966ff', '#ff9f40', '#ff6384', '#c9cbcf'];
-                return {
-                    label: `ψ = ${azimuth}°`,
-                    data: thrustAtAzimuths[azimuth],
-                    borderColor: colors[idx % colors.length],
-                    backgroundColor: 'transparent',
-                    borderWidth: 2,
-                    pointRadius: 3,
-                    tension: 0.2
-                };
-            });
+            // Add 10% padding
+            const range = maxThrust - minThrust;
+            const padding = range * 0.1;
+            minThrust -= padding;
+            maxThrust += padding;
             
-            console.log('updateSpanwiseChart: Updated chart with', spanwiseChart.data.datasets.length, 'datasets,', spanwiseChart.data.labels.length, 'points');
-            spanwiseChart.update('none');
+            // Update chart y-axis
+            if (spanwiseChart) {
+                spanwiseChart.options.scales.y.min = minThrust;
+                spanwiseChart.options.scales.y.max = maxThrust;
+                spanwiseChart.update('none');
+            }
         }
         
         // Update section diagram with velocity vectors
@@ -3216,8 +3227,10 @@
             // Get blade segment at this station
             if (!blades || blades.length === 0) return;
             const blade = blades[0];
-            const segmentIndex = Math.floor((stationPercent - 10) / 85 * blade.children.length);
-            const segment = blade.children[Math.max(0, Math.min(segmentIndex, blade.children.length - 1))];
+            if (!blade.segments || blade.segments.length === 0) return;
+            
+            const segmentIndex = Math.floor((stationPercent - 10) / 85 * blade.segments.length);
+            const segment = blade.segments[Math.max(0, Math.min(segmentIndex, blade.segments.length - 1))];
             
             if (!segment) return;
             
@@ -3595,11 +3608,9 @@
                 });
                 document.getElementById(tabName + '-tab').classList.add('active');
                 
-                // Force chart resize when switching tabs
+                // Update tab when switching
                 setTimeout(() => {
-                    if (tabName === 'loading' && typeof spanwiseChart !== 'undefined') {
-                        spanwiseChart.resize();
-                    } else if (tabName === 'section') {
+                    if (tabName === 'section') {
                         updateSectionDiagram();
                     }
                 }, 100);
