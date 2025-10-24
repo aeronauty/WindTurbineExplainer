@@ -450,31 +450,6 @@
         </div>
     </div>
     
-    <div id="stats">
-        <h3>📊 Statistics</h3>
-        <div class="stat-row">
-            <span class="stat-label">Max Load:</span>
-            <span class="stat-value" id="max-load">73.14</span>
-        </div>
-        <div class="stat-row">
-            <span class="stat-label">Avg AoA:</span>
-            <span class="stat-value" id="avg-aoa">44.5</span>
-        </div>
-        <div class="stat-row">
-            <span class="stat-label">Tip Speed:</span>
-            <span class="stat-value" id="tip-speed">20.9</span>
-        </div>
-    </div>
-    
-    <div id="legend">
-        <h3>Load Scale</h3>
-        <div class="legend-gradient"></div>
-        <div class="legend-labels">
-            <span>Low</span>
-            <span>High</span>
-        </div>
-    </div>
-    
     <div id="spanwise-panel">
         <div class="plot-header">
             <div class="plot-title">📐 Spanwise Analysis</div>
@@ -1481,12 +1456,6 @@
                     }
                 }
             });
-            
-            // Update stats (dimensionless)
-            document.getElementById('max-load').textContent = maxLoad.toFixed(2);
-            document.getElementById('avg-aoa').textContent = (totalAoA / aoaCount).toFixed(1);
-            const tipSpeed = (turbineParams.shaftSpeed * 2 * Math.PI / 60) * turbineParams.bladeRadius;
-            document.getElementById('tip-speed').textContent = tipSpeed.toFixed(1);
             
             // Update plot data
             if (omega > 0) {
@@ -3525,8 +3494,6 @@
         }
         
         makeDraggable(document.getElementById('controls-panel'), '.panel-header');
-        makeDraggable(document.getElementById('stats'), 'h3');
-        makeDraggable(document.getElementById('legend'), 'h3');
         makeDraggable(document.getElementById('plot-panel'), '.plot-header');
         makeDraggable(document.getElementById('spanwise-panel'), '.plot-header');
         
@@ -3737,7 +3704,7 @@
         
         document.getElementById('display-toggle').addEventListener('click', () => {
             const btn = document.getElementById('display-toggle');
-            const panels = ['controls-panel', 'stats', 'legend', 'plot-panel', 'spanwise-panel'];
+            const panels = ['controls-panel', 'plot-panel', 'spanwise-panel'];
             
             if (!displayState.modalsHidden) {
                 // Hide all modals
