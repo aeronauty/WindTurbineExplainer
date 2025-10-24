@@ -373,8 +373,8 @@
             
             <div class="control-group">
                 <label>Blade Pitch: <span class="value-display" id="blade-pitch-value">0.0</span>°</label>
-                <input type="range" id="blade-pitch" min="-10" max="30" value="0" step="1">
-                <div class="info-text">Visual pitch angle</div>
+                <input type="range" id="blade-pitch" min="-10" max="90" value="0" step="1">
+                <div class="info-text">0° = in disc plane, 90° = fully feathered</div>
             </div>
             
             <div class="control-group">
@@ -472,17 +472,16 @@
             
             <div id="section-tab" class="spanwise-tab-content">
                 <div style="padding: 10px;">
-                    <p style="font-size: 0.9em; margin: 5px 0;">Airfoil section and velocity vectors (at radial station from Load Traces)</p>
-                    <canvas id="section-chart"></canvas>
-                    <div id="section-info" style="margin-top: 10px; font-size: 0.85em; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                            <div><strong>Azimuth:</strong> <span id="section-azimuth">0°</span></div>
-                            <div><strong>AoA:</strong> <span id="section-aoa">0°</span></div>
-                            <div><strong>V_total:</strong> <span id="section-vtotal">0 m/s</span></div>
-                            <div><strong>V_tangential:</strong> <span id="section-vtang">0 m/s</span></div>
-                            <div><strong>V_normal:</strong> <span id="section-vnorm">0 m/s</span></div>
-                            <div><strong>Thrust:</strong> <span id="section-thrust">0 N</span></div>
-                        </div>
+                    <p style="font-size: 0.9em; margin: 5px 0 10px 0;">
+                        Airfoil section with velocity vectors
+                        <button id="reset-zoom-btn" style="margin-left: 10px; padding: 2px 8px; font-size: 0.85em;">Reset View</button>
+                    </p>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 0.9em;">Radial Station (% span): <span class="value-display" id="section-station-value">50</span></label>
+                        <input type="range" id="section-radial-station" min="10" max="95" value="50" step="5" style="width: 100%;">
+                    </div>
+                    <div style="height: 400px;">
+                        <canvas id="section-chart"></canvas>
                     </div>
                 </div>
             </div>
@@ -504,6 +503,8 @@
                 <button class="trace-tab-btn active" data-tab="thrust">Thrust</button>
                 <button class="trace-tab-btn" data-tab="moment-y">Yawing Moment (M_y)</button>
                 <button class="trace-tab-btn" data-tab="moment-z">Nodding Moment (M_z)</button>
+                <button class="trace-tab-btn" data-tab="aoa">Angle of Attack</button>
+                <button class="trace-tab-btn" data-tab="velocity">Total Velocity</button>
                 <button class="trace-tab-btn" data-tab="debug">Debug</button>
             </div>
             
@@ -543,6 +544,30 @@
                 </div>
             </div>
             
+            <div id="aoa-tab" class="trace-tab-content">
+                <div class="chart-with-fourier">
+                    <div class="chart-container">
+                        <canvas id="aoa-chart"></canvas>
+                    </div>
+                    <div class="fourier-summary">
+                        <h4 style="margin-top: 0; font-size: 1em;">Angle of Attack Harmonics</h4>
+                        <div id="fourier-aoa-content"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="velocity-tab" class="trace-tab-content">
+                <div class="chart-with-fourier">
+                    <div class="chart-container">
+                        <canvas id="velocity-chart"></canvas>
+                    </div>
+                    <div class="fourier-summary">
+                        <h4 style="margin-top: 0; font-size: 1em;">Total Velocity Harmonics</h4>
+                        <div id="fourier-velocity-content"></div>
+                    </div>
+                </div>
+            </div>
+            
             <div id="debug-tab" class="trace-tab-content">
                 <button id="generate-debug" style="margin-bottom: 10px; padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">Generate Debug Data (2 Blades, 2 Revolutions)</button>
                 <div id="debug-output" style="font-family: monospace; font-size: 0.85em;"></div>
@@ -555,6 +580,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
     
     <!-- Photo Rendering Mode Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
@@ -658,6 +684,7 @@
             windSpeed: 10,
             shaftSpeed: 10,
             bladePitch: 0,
+            bladeTwist: 15, // Total twist from root to tip in degrees
             numBlades: 3,
             yawAngle: 0,
             inflowAngle: 0,
@@ -685,6 +712,8 @@
             bladeLift: [],
             bladeMomentY: [],
             bladeMomentZ: [],
+            bladeAoA: [],       // Angle of Attack (per blade, no total)
+            bladeVelocity: [],  // Total Velocity (per blade, no total)
             totalLift: [],
             totalMomentY: [],
             totalMomentZ: [],
@@ -699,6 +728,8 @@
             bladeLift: [],
             bladeMomentY: [],
             bladeMomentZ: [],
+            bladeAoA: [],       // Angle of Attack Fourier data
+            bladeVelocity: [],  // Total Velocity Fourier data
             totalLift: [],
             totalMomentY: [],
             totalMomentZ: [],
@@ -719,6 +750,8 @@
             plotData.bladeLift = [];
             plotData.bladeMomentY = [];
             plotData.bladeMomentZ = [];
+            plotData.bladeAoA = [];
+            plotData.bladeVelocity = [];
             plotData.totalLift = [];
             plotData.totalMomentY = [];
             plotData.totalMomentZ = [];
@@ -728,6 +761,8 @@
                 plotData.bladeLift[i] = [];
                 plotData.bladeMomentY[i] = [];
                 plotData.bladeMomentZ[i] = [];
+                plotData.bladeAoA[i] = [];
+                plotData.bladeVelocity[i] = [];
             }
             timeCounter = 0;
         }
@@ -741,6 +776,8 @@
             fourierData.bladeLift = [];
             fourierData.bladeMomentY = [];
             fourierData.bladeMomentZ = [];
+            fourierData.bladeAoA = [];
+            fourierData.bladeVelocity = [];
             fourierData.totalLift = [];
             fourierData.totalMomentY = [];
             fourierData.totalMomentZ = [];
@@ -1059,6 +1096,11 @@
             for (let i = 0; i < turbineParams.numBlades; i++) {
                 const blade = createBlade();
                 blade.rotation.x = (i * 2 * Math.PI) / turbineParams.numBlades;
+                
+                // Apply initial pitch angle to visual blade
+                const actualPitchAngle = turbineParams.bladePitch - 90;
+                blade.pitchGroup.rotation.y = actualPitchAngle * Math.PI / 180;
+                
                 rotorGroup.add(blade);
                 blades.push(blade);
                 
@@ -1264,7 +1306,10 @@
                     
                     // Flow angle and angle of attack
                     const phi = Math.atan2(Vn, Vt);
-                    const aoa = -(phi * 180 / Math.PI - twist + turbineParams.bladePitch);
+                    // Convert bladePitch from new convention (0=disc, 90=feathered) to actual angle
+                    const actualPitchAngle = turbineParams.bladePitch - 90;
+                    // AoA = blade angle (twist + pitch) - advance angle (phi)
+                    const aoa = (twist + actualPitchAngle) - (phi * 180 / Math.PI);
                     
                     totalAoA += aoa;
                     aoaCount++;
@@ -1287,6 +1332,7 @@
                     const load = Math.abs(thrust);
                     segment.userData.load = load;
                     segment.userData.aoa = aoa;
+                    segment.userData.totalVelocity = V_total;
                     segment.userData.azimuth = azimuth;
                     segment.userData.thrust = thrust;
                     segment.userData.L = L;  // Store lift for resultant vector
@@ -1823,6 +1869,8 @@
             const bladeLifts = [];
             const bladeMomentsY = [];
             const bladeMomentsZ = [];
+            const bladeAoAs = [];
+            const bladeVelocities = [];
             let totalLift = 0;
             let totalMomentY = 0;  // Vertical bending moment (nodding)
             let totalMomentZ = 0;  // Horizontal bending moment (yawing)
@@ -1844,7 +1892,11 @@
                 
                 if (closestSegment) {
                     const thrust = closestSegment.userData.thrust || 0;
+                    const aoa = closestSegment.userData.aoa || 0;
+                    const velocity = closestSegment.userData.totalVelocity || 0;
                     bladeLifts.push(thrust);
+                    bladeAoAs.push(aoa);
+                    bladeVelocities.push(velocity);
                     
                     // Bending moment in non-rotating frame
                     // Each blade creates a moment about the tower base
@@ -1864,6 +1916,8 @@
                     bladeLifts.push(0);
                     bladeMomentsY.push(0);
                     bladeMomentsZ.push(0);
+                    bladeAoAs.push(0);
+                    bladeVelocities.push(0);
                 }
             });
             
@@ -1895,6 +1949,8 @@
                     plotData.bladeLift[i].push(bladeLifts[i] || 0);
                     plotData.bladeMomentY[i].push(bladeMomentsY[i] || 0);
                     plotData.bladeMomentZ[i].push(bladeMomentsZ[i] || 0);
+                    plotData.bladeAoA[i].push(bladeAoAs[i] || 0);
+                    plotData.bladeVelocity[i].push(bladeVelocities[i] || 0);
                 }
             }
             plotData.totalLift.push(totalLift);
@@ -1922,6 +1978,8 @@
                         fourierData.bladeLift.push(bladeLifts[0]);
                         fourierData.bladeMomentY.push(bladeMomentsY[0]);
                         fourierData.bladeMomentZ.push(bladeMomentsZ[0]);
+                        fourierData.bladeAoA.push(bladeAoAs[0]);
+                        fourierData.bladeVelocity.push(bladeVelocities[0]);
                         fourierData.totalLift.push(totalLift);
                         fourierData.totalMomentY.push(totalMomentY);
                         fourierData.totalMomentZ.push(totalMomentZ);
@@ -2004,6 +2062,8 @@
             let displayBladeLift = plotData.bladeLift;
             let displayBladeMomentY = plotData.bladeMomentY;
             let displayBladeMomentZ = plotData.bladeMomentZ;
+            let displayBladeAoA = plotData.bladeAoA;
+            let displayBladeVelocity = plotData.bladeVelocity;
             let displayTotalLift = plotData.totalLift;
             let displayTotalMomentY = plotData.totalMomentY;
             let displayTotalMomentZ = plotData.totalMomentZ;
@@ -2027,6 +2087,22 @@
                 });
                 
                 displayBladeMomentZ = plotData.bladeMomentZ.map(bladeData => {
+                    if (bladeData && bladeData.length > 0) {
+                        const mean = bladeData.reduce((a, b) => a + b, 0) / bladeData.length;
+                        return bladeData.map(v => v - mean);
+                    }
+                    return bladeData;
+                });
+                
+                displayBladeAoA = plotData.bladeAoA.map(bladeData => {
+                    if (bladeData && bladeData.length > 0) {
+                        const mean = bladeData.reduce((a, b) => a + b, 0) / bladeData.length;
+                        return bladeData.map(v => v - mean);
+                    }
+                    return bladeData;
+                });
+                
+                displayBladeVelocity = plotData.bladeVelocity.map(bladeData => {
                     if (bladeData && bladeData.length > 0) {
                         const mean = bladeData.reduce((a, b) => a + b, 0) / bladeData.length;
                         return bladeData.map(v => v - mean);
@@ -2121,6 +2197,30 @@
             momentZChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
             momentZChart.update('none');
             
+            // Update AoA chart (no total)
+            aoaChart.data.labels = plotData.time;
+            aoaChart.options.scales.x.min = xMin;
+            aoaChart.options.scales.x.max = xMax;
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                if (aoaChart.data.datasets[i] && displayBladeAoA[i]) {
+                    aoaChart.data.datasets[i].data = displayBladeAoA[i];
+                }
+            }
+            aoaChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
+            aoaChart.update('none');
+            
+            // Update Velocity chart (no total)
+            velocityChart.data.labels = plotData.time;
+            velocityChart.options.scales.x.min = xMin;
+            velocityChart.options.scales.x.max = xMax;
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                if (velocityChart.data.datasets[i] && displayBladeVelocity[i]) {
+                    velocityChart.data.datasets[i].data = displayBladeVelocity[i];
+                }
+            }
+            velocityChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
+            velocityChart.update('none');
+            
             // Update Fourier analysis if we have enough data
             updateFourierDisplay();
         }
@@ -2130,9 +2230,11 @@
             const thrustContent = document.getElementById('fourier-thrust-content');
             const momentYContent = document.getElementById('fourier-moment-y-content');
             const momentZContent = document.getElementById('fourier-moment-z-content');
+            const aoaContent = document.getElementById('fourier-aoa-content');
+            const velocityContent = document.getElementById('fourier-velocity-content');
             
             // Check if elements exist (they might not if we're still loading)
-            if (!thrustContent || !momentYContent || !momentZContent) return;
+            if (!thrustContent || !momentYContent || !momentZContent || !aoaContent || !velocityContent) return;
             
             // Check collection status
             if (fourierData.collecting) {
@@ -2141,6 +2243,8 @@
                 thrustContent.innerHTML = statusMsg;
                 momentYContent.innerHTML = statusMsg;
                 momentZContent.innerHTML = statusMsg;
+                aoaContent.innerHTML = statusMsg;
+                velocityContent.innerHTML = statusMsg;
                 return;
             }
             
@@ -2149,6 +2253,8 @@
                 thrustContent.innerHTML = waitMsg;
                 momentYContent.innerHTML = waitMsg;
                 momentZContent.innerHTML = waitMsg;
+                aoaContent.innerHTML = waitMsg;
+                velocityContent.innerHTML = waitMsg;
                 return;
             }
             
@@ -2331,6 +2437,54 @@
             thrustContent.innerHTML = thrustHtml;
             momentYContent.innerHTML = momentYHtml;
             momentZContent.innerHTML = momentZHtml;
+            
+            // === AOA TAB === (Blade data only, no total)
+            const blade1AoA = fourierData.bladeAoA;
+            const blade1AoAFourier = analyzeFourier(blade1AoA, maxHarmonic);
+            const blade1AoAWithPercent = calculatePercent(blade1AoAFourier);
+            
+            let aoaHtml = '';
+            aoaHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Angle of Attack</h5>';
+            aoaHtml += createFourierEquation('AoA', blade1AoAFourier);
+            aoaHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            aoaHtml += '<thead><tr style="background: #ddd;">';
+            aoaHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            aoaHtml += '<th style="padding: 3px; text-align: right;">Amp (deg)</th>';
+            aoaHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            aoaHtml += '</tr></thead><tbody>';
+            blade1AoAWithPercent.forEach((h, idx) => {
+                aoaHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                aoaHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                aoaHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                aoaHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                aoaHtml += '</tr>';
+            });
+            aoaHtml += '</tbody></table>';
+            aoaContent.innerHTML = aoaHtml;
+            
+            // === VELOCITY TAB === (Blade data only, no total)
+            const blade1Velocity = fourierData.bladeVelocity;
+            const blade1VelocityFourier = analyzeFourier(blade1Velocity, maxHarmonic);
+            const blade1VelocityWithPercent = calculatePercent(blade1VelocityFourier);
+            
+            let velocityHtml = '';
+            velocityHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Total Velocity</h5>';
+            velocityHtml += createFourierEquation('V', blade1VelocityFourier);
+            velocityHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
+            velocityHtml += '<thead><tr style="background: #ddd;">';
+            velocityHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
+            velocityHtml += '<th style="padding: 3px; text-align: right;">Amp (m/s)</th>';
+            velocityHtml += '<th style="padding: 3px; text-align: right;">%</th>';
+            velocityHtml += '</tr></thead><tbody>';
+            blade1VelocityWithPercent.forEach((h, idx) => {
+                velocityHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
+                velocityHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
+                velocityHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
+                velocityHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
+                velocityHtml += '</tr>';
+            });
+            velocityHtml += '</tbody></table>';
+            velocityContent.innerHTML = velocityHtml;
         }
         
         // Rebuild charts when blade count changes
@@ -2351,6 +2505,16 @@
             momentZChart.data.datasets = chartDatasets.momentZDatasets;
             momentZChart.data.labels = [];
             momentZChart.update('reset');
+            
+            // Completely rebuild AoA chart
+            aoaChart.data.datasets = chartDatasets.aoaDatasets;
+            aoaChart.data.labels = [];
+            aoaChart.update('reset');
+            
+            // Completely rebuild Velocity chart
+            velocityChart.data.datasets = chartDatasets.velocityDatasets;
+            velocityChart.data.labels = [];
+            velocityChart.update('reset');
         }
         
         // Create chart datasets
@@ -2381,6 +2545,8 @@
             const liftDatasets = [];
             const momentYDatasets = [];
             const momentZDatasets = [];
+            const aoaDatasets = [];
+            const velocityDatasets = [];
             
             // Individual blade datasets
             for (let i = 0; i < turbineParams.numBlades; i++) {
@@ -2404,6 +2570,24 @@
                 
                 momentZDatasets.push({
                     label: `Blade ${i + 1} Mz`,
+                    data: [],
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length],
+                    borderWidth: 1,
+                    pointRadius: 0
+                });
+                
+                aoaDatasets.push({
+                    label: `Blade ${i + 1} AoA`,
+                    data: [],
+                    borderColor: colors[i % colors.length],
+                    backgroundColor: colors[i % colors.length],
+                    borderWidth: 1,
+                    pointRadius: 0
+                });
+                
+                velocityDatasets.push({
+                    label: `Blade ${i + 1} Velocity`,
                     data: [],
                     borderColor: colors[i % colors.length],
                     backgroundColor: colors[i % colors.length],
@@ -2440,7 +2624,7 @@
                 pointRadius: 0
             });
             
-            return { liftDatasets, momentYDatasets, momentZDatasets };
+            return { liftDatasets, momentYDatasets, momentZDatasets, aoaDatasets, velocityDatasets };
         }
         
         // Initialize charts
@@ -2654,6 +2838,96 @@
             plugins: [currentPositionPlugin, tdcMarkerPlugin]
         });
         
+        // AoA chart (no total, just individual blades)
+        const aoaChartCtx = document.getElementById('aoa-chart').getContext('2d');
+        let aoaChart = new Chart(aoaChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: chartDatasets.aoaDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Angle of Attack (degrees)'
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        type: 'linear',
+                        title: {
+                            display: true,
+                            text: 'Time (rad)'
+                        },
+                        ticks: {
+                            display: false  // Hide tick numbers
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'AoA (deg)'
+                        }
+                    }
+                }
+            },
+            plugins: [currentPositionPlugin, tdcMarkerPlugin]
+        });
+        
+        // Velocity chart (no total, just individual blades)
+        const velocityChartCtx = document.getElementById('velocity-chart').getContext('2d');
+        let velocityChart = new Chart(velocityChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: chartDatasets.velocityDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Total Velocity (m/s)'
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        type: 'linear',
+                        title: {
+                            display: true,
+                            text: 'Time (rad)'
+                        },
+                        ticks: {
+                            display: false  // Hide tick numbers
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Velocity (m/s)'
+                        }
+                    }
+                }
+            },
+            plugins: [currentPositionPlugin, tdcMarkerPlugin]
+        });
+        
         // Spanwise loading chart - empty scatter plot
         const spanwiseChartCanvas = document.getElementById('spanwise-chart');
         const spanwiseChartCtx = spanwiseChartCanvas.getContext('2d');
@@ -2695,11 +2969,138 @@
             }
         });
         
-        // Section analysis chart (for velocity vectors)
+        // Section analysis chart - airfoil with velocity vectors
         const sectionChartCanvas = document.getElementById('section-chart');
-        sectionChartCanvas.height = 400; // Set canvas height
         const sectionChartCtx = sectionChartCanvas.getContext('2d');
-        let sectionChart = null; // Will be drawn manually with canvas 2D API
+        const sectionChart = new Chart(sectionChartCtx, {
+            type: 'scatter',
+            data: {
+                datasets: [
+                    {
+                        label: 'Airfoil',
+                        data: [],
+                        backgroundColor: '#cccccc',
+                        borderColor: '#666666',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'V_tangential',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#ff6384',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'V_normal',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#36a2eb',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'V_resultant',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#4bc0c0',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'Lift',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#9966ff',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'Drag',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#ff9f40',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'Resultant Force',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#ff6384',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 4
+                    },
+                    {
+                        label: 'Thrust',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#00cc00',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 3
+                    },
+                    {
+                        label: 'Tangential Force',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#ff00ff',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                aspectRatio: 1,
+                animation: false,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: { display: true, text: 'Chord Position' },
+                        min: -3,
+                        max: 3
+                    },
+                    y: {
+                        type: 'linear',
+                        title: { display: true, text: 'Height' },
+                        min: -3,
+                        max: 3
+                    }
+                },
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    zoom: {
+                        pan: {
+                            enabled: true,
+                            mode: 'xy'
+                        },
+                        zoom: {
+                            wheel: {
+                                enabled: true,
+                                speed: 0.1
+                            },
+                            pinch: {
+                                enabled: true
+                            },
+                            mode: 'xy'
+                        }
+                    }
+                }
+            }
+        });
         
         // Now that charts are initialized, create the initial blades
         updateBladeCount();
@@ -2749,8 +3150,11 @@
             turbineParams.bladePitch = parseFloat(e.target.value);
             document.getElementById('blade-pitch-value').textContent = turbineParams.bladePitch.toFixed(1);
             // Update visual blade pitch
+            // Convert from new convention: 0° = in disc, 90° = feathered
+            // To rotation: subtract from 90° to get actual pitch angle
+            const actualPitchAngle = turbineParams.bladePitch - 90;
             blades.forEach(blade => {
-                blade.pitchGroup.rotation.y = turbineParams.bladePitch * Math.PI / 180;
+                blade.pitchGroup.rotation.y = actualPitchAngle * Math.PI / 180;
             });
         });
         
@@ -2827,16 +3231,21 @@
                 plotData.bladeLift[i] = [];
                 plotData.bladeMomentY[i] = [];
                 plotData.bladeMomentZ[i] = [];
+                plotData.bladeAoA[i] = [];
+                plotData.bladeVelocity[i] = [];
             }
             timeCounter = 0;
             resetFourierCollection();
         });
         
-        // Radial station control
+        // Radial station control (Load Traces)
         document.getElementById('radial-station').addEventListener('input', (e) => {
             const percent = parseInt(e.target.value);
             turbineParams.radialStation = percent / 100;
             document.getElementById('station-value').textContent = percent;
+            // Sync to section analysis slider
+            document.getElementById('section-radial-station').value = percent;
+            document.getElementById('section-station-value').textContent = percent;
             // Reset plot data when station changes
             initPlotData();
             rebuildCharts();
@@ -2845,8 +3254,91 @@
                 plotData.bladeLift[i] = [];
                 plotData.bladeMomentY[i] = [];
                 plotData.bladeMomentZ[i] = [];
+                plotData.bladeAoA[i] = [];
+                plotData.bladeVelocity[i] = [];
             }
             timeCounter = 0;
+        });
+        
+        // Radial station control (Section Analysis) - synced with Load Traces
+        document.getElementById('section-radial-station').addEventListener('input', (e) => {
+            const percent = parseInt(e.target.value);
+            turbineParams.radialStation = percent / 100;
+            document.getElementById('section-station-value').textContent = percent;
+            // Sync to load traces slider
+            document.getElementById('radial-station').value = percent;
+            document.getElementById('station-value').textContent = percent;
+            // Update section diagram immediately
+            updateSectionDiagram();
+            // Reset plot data when station changes
+            initPlotData();
+            rebuildCharts();
+            // Reset arrays
+            for (let i = 0; i < turbineParams.numBlades; i++) {
+                plotData.bladeLift[i] = [];
+                plotData.bladeMomentY[i] = [];
+                plotData.bladeMomentZ[i] = [];
+                plotData.bladeAoA[i] = [];
+                plotData.bladeVelocity[i] = [];
+            }
+            timeCounter = 0;
+        });
+        
+        // Reset zoom button for section chart
+        document.getElementById('reset-zoom-btn').addEventListener('click', () => {
+            if (sectionChart) {
+                sectionChart.resetZoom();
+            }
+        });
+        
+        // Add custom pan functionality to section chart
+        let isPanning = false;
+        let panStartX = 0;
+        let panStartY = 0;
+        
+        sectionChartCanvas.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            panStartX = e.clientX;
+            panStartY = e.clientY;
+            sectionChartCanvas.style.cursor = 'grabbing';
+        });
+        
+        sectionChartCanvas.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            
+            const deltaX = e.clientX - panStartX;
+            const deltaY = e.clientY - panStartY;
+            
+            // Get current scale ranges
+            const xScale = sectionChart.scales.x;
+            const yScale = sectionChart.scales.y;
+            
+            // Calculate pan amount based on pixel movement
+            const xRange = xScale.max - xScale.min;
+            const yRange = yScale.max - yScale.min;
+            const xPan = -(deltaX / sectionChartCanvas.width) * xRange;
+            const yPan = (deltaY / sectionChartCanvas.height) * yRange;
+            
+            // Update scales
+            sectionChart.options.scales.x.min = xScale.min + xPan;
+            sectionChart.options.scales.x.max = xScale.max + xPan;
+            sectionChart.options.scales.y.min = yScale.min + yPan;
+            sectionChart.options.scales.y.max = yScale.max + yPan;
+            
+            sectionChart.update('none');
+            
+            panStartX = e.clientX;
+            panStartY = e.clientY;
+        });
+        
+        sectionChartCanvas.addEventListener('mouseup', () => {
+            isPanning = false;
+            sectionChartCanvas.style.cursor = 'default';
+        });
+        
+        sectionChartCanvas.addEventListener('mouseleave', () => {
+            isPanning = false;
+            sectionChartCanvas.style.cursor = 'default';
         });
                 
         // Debug data generation
@@ -3175,28 +3667,14 @@
         
         // Update section diagram with velocity vectors
         function updateSectionDiagram() {
-            const canvas = document.getElementById('section-chart');
-            if (!canvas) {
-                console.log('updateSectionDiagram: Canvas not found');
-                return;
-            }
+            if (!blades || blades.length === 0 || !sectionChart) return;
             
-            const ctx = canvas.getContext('2d');
-            const width = canvas.width = canvas.offsetWidth;
-            const height = canvas.height = 400;
-            
-            console.log('updateSectionDiagram: Canvas size', width, 'x', height);
-            
-            ctx.clearRect(0, 0, width, height);
-            
-            // Get current radial station from load traces slider
-            const stationPercent = parseFloat(document.getElementById('radial-station').value);
-            const r = turbineParams.bladeRadius * stationPercent / 100;
-            
-            // Get blade segment at this station
-            if (!blades || blades.length === 0) return;
             const blade = blades[0];
             if (!blade.segments || blade.segments.length === 0) return;
+            
+            // Get current radial station from section's own slider
+            const stationPercent = parseFloat(document.getElementById('section-radial-station').value);
+            const r = turbineParams.bladeRadius * stationPercent / 100;
             
             const segmentIndex = Math.floor((stationPercent - 10) / 85 * blade.segments.length);
             const segment = blade.segments[Math.max(0, Math.min(segmentIndex, blade.segments.length - 1))];
@@ -3207,6 +3685,11 @@
             const twist = segment.userData.twist || 0;
             const azimuth = (rotorGroup.rotation.x * 180 / Math.PI) % 360;
             const azimuthRad = azimuth * Math.PI / 180;
+            
+            // Get actual pitch angle (convert from 0=disc, 90=feathered convention)
+            const actualPitchAngle = turbineParams.bladePitch - 90;
+            const totalBladeAngle = twist + actualPitchAngle; // Total rotation of blade
+            const angleRad = -totalBladeAngle * Math.PI / 180; // Negative for correct direction
             
             // Calculate velocity components
             const V = turbineParams.windSpeed;
@@ -3223,147 +3706,113 @@
             const V_inplane_tangential = V_x * Math.cos(azimuthRad) - V_y * Math.sin(azimuthRad);
             const V_normal = V_z;
             
-            const Vt = U - V_inplane_tangential;
-            const Vn = V_normal;
-            const V_total = Math.sqrt(Vt * Vt + Vn * Vn);
+            const Vt = U - V_inplane_tangential; // Tangential velocity (rotational + wind)
+            const Vn = V_normal; // Normal velocity (axial wind)
             
-            const phi = Math.atan2(Vn, Vt);
-            const aoa = twist - phi * 180 / Math.PI;
+            // Generate NACA 0012 airfoil profile (rotated by twist + pitch)
+            const airfoilPoints = [];
+            const numPoints = 50;
             
-            const Cl = 2 * Math.PI * aoa * Math.PI / 180;
-            const Cd = 0.01;
-            
-            const L = 0.5 * 1.225 * V_total * V_total * chord * Cl;
-            const D = 0.5 * 1.225 * V_total * V_total * chord * Cd;
-            
-            const thrust = L * Math.cos(phi) + D * Math.sin(phi);
-            
-            // Update info panel
-            document.getElementById('section-azimuth').textContent = azimuth.toFixed(1) + '°';
-            document.getElementById('section-aoa').textContent = aoa.toFixed(1) + '°';
-            document.getElementById('section-vtotal').textContent = V_total.toFixed(2) + ' m/s';
-            document.getElementById('section-vtang').textContent = Vt.toFixed(2) + ' m/s';
-            document.getElementById('section-vnorm').textContent = Vn.toFixed(2) + ' m/s';
-            document.getElementById('section-thrust').textContent = thrust.toFixed(2) + ' N';
-            
-            // Draw airfoil section (simplified NACA shape)
-            const centerX = width / 2;
-            const centerY = height / 2;
-            const chordScale = 100; // pixels per unit chord
-            const chordLength = chord * chordScale;
-            
-            ctx.save();
-            ctx.translate(centerX, centerY);
-            ctx.rotate(-twist * Math.PI / 180); // Apply twist
-            
-            // Draw airfoil
-            ctx.beginPath();
-            ctx.moveTo(-chordLength/2, 0);
-            for (let i = 0; i <= 100; i++) {
-                const x = -chordLength/2 + i * chordLength / 100;
-                const xNorm = i / 100;
-                // Simple symmetric airfoil shape
-                const y = chordLength * 0.12 * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * xNorm * xNorm * xNorm - 0.1015 * xNorm * xNorm * xNorm * xNorm);
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
+            // Upper surface
+            for (let i = 0; i <= numPoints; i++) {
+                const xNorm = i / numPoints; // 0 to 1
+                const xLocal = (xNorm - 0.5) * chord; // LE on left, TE on right
+                const t = 0.12; // 12% thickness
+                const yLocal = chord * t * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * Math.pow(xNorm, 3) - 0.1015 * Math.pow(xNorm, 4));
+                // Rotate by total blade angle
+                const x = xLocal * Math.cos(angleRad) - yLocal * Math.sin(angleRad);
+                const y = xLocal * Math.sin(angleRad) + yLocal * Math.cos(angleRad);
+                airfoilPoints.push({ x: x, y: y });
             }
-            for (let i = 100; i >= 0; i--) {
-                const x = -chordLength/2 + i * chordLength / 100;
-                const xNorm = i / 100;
-                const y = -chordLength * 0.12 * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * xNorm * xNorm * xNorm - 0.1015 * xNorm * xNorm * xNorm * xNorm);
-                ctx.lineTo(x, y);
+            
+            // Lower surface (reverse order)
+            for (let i = numPoints; i >= 0; i--) {
+                const xNorm = i / numPoints;
+                const xLocal = (xNorm - 0.5) * chord; // LE on left, TE on right
+                const t = 0.12;
+                const yLocal = -chord * t * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * Math.pow(xNorm, 3) - 0.1015 * Math.pow(xNorm, 4));
+                // Rotate by total blade angle
+                const x = xLocal * Math.cos(angleRad) - yLocal * Math.sin(angleRad);
+                const y = xLocal * Math.sin(angleRad) + yLocal * Math.cos(angleRad);
+                airfoilPoints.push({ x: x, y: y });
             }
-            ctx.closePath();
-            ctx.fillStyle = '#ddd';
-            ctx.fill();
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 2;
-            ctx.stroke();
             
-            // Draw chord line
-            ctx.beginPath();
-            ctx.moveTo(-chordLength/2, 0);
-            ctx.lineTo(chordLength/2, 0);
-            ctx.strokeStyle = '#999';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 5]);
-            ctx.stroke();
-            ctx.setLineDash([]);
+            // Velocity vector scale
+            const vectorScale = 0.15; // Scale factor for visibility
             
-            ctx.restore();
+            // V_tangential vector (vertical, from bottom - tail grows down, head at airfoil)
+            const vt_scaled = Vt * vectorScale;
+            const vtVector = [
+                { x: 0, y: -vt_scaled }, // Tail starts below based on velocity
+                { x: 0, y: 0 } // Head at airfoil (fixed)
+            ];
             
-            // Draw velocity vectors (in global frame)
-            const vectorScale = 3; // pixels per m/s
-            const vecOriginX = centerX;
-            const vecOriginY = centerY;
+            // V_normal vector (horizontal, from left - tail grows left, head at airfoil)
+            const vn_scaled = Vn * vectorScale;
+            const vnVector = [
+                { x: -vn_scaled, y: 0 }, // Tail starts left based on velocity
+                { x: 0, y: 0 } // Head at airfoil (fixed)
+            ];
             
-            // V_tangential (horizontal, to the left in rotor frame)
-            drawVector(ctx, vecOriginX, vecOriginY, -Vt * vectorScale, 0, '#ff6384', 'V_t');
+            // V_resultant vector (diagonal - tail grows, head at airfoil)
+            const vResultantVector = [
+                { x: -vn_scaled, y: -vt_scaled }, // Tail position based on both velocities
+                { x: 0, y: 0 } // Head at airfoil (fixed)
+            ];
             
-            // V_normal (vertical, upward is positive inflow)
-            drawVector(ctx, vecOriginX, vecOriginY, 0, -Vn * vectorScale, '#36a2eb', 'V_n');
+            // Get aerodynamic forces from segment userData (already calculated in updateBladeLoads)
+            const L = segment.userData.L || 0; // Lift
+            const D = segment.userData.D || 0; // Drag
+            const thrust = segment.userData.thrust || 0; // Thrust (axial force)
+            const phi = segment.userData.phi || 0; // Flow angle
             
-            // V_total (resultant)
-            drawVector(ctx, vecOriginX, vecOriginY, -Vt * vectorScale, -Vn * vectorScale, '#4bc0c0', 'V_total', 3);
+            // Force vector scale (forces are much larger than velocities)
+            const forceScale = 0.005; // Scale factor for visibility
             
-            // Draw angle of attack reference
-            ctx.save();
-            ctx.translate(vecOriginX, vecOriginY);
-            ctx.rotate(-twist * Math.PI / 180);
+            // Lift vector: perpendicular to relative velocity (V_resultant), magnitude L
+            // In the blade reference frame, lift acts perpendicular to flow
+            const phi_rad = phi; // phi is already in radians
+            const lift_x = L * Math.sin(phi_rad) * forceScale;
+            const lift_y = L * Math.cos(phi_rad) * forceScale;
+            const liftVector = [
+                { x: 0, y: 0 }, // Tail at airfoil
+                { x: lift_x, y: lift_y } // Head points perpendicular to flow
+            ];
             
-            // Draw angle arc
-            const arcRadius = 40;
-            ctx.beginPath();
-            ctx.arc(0, 0, arcRadius, 0, -phi, phi < 0);
-            ctx.strokeStyle = '#9966ff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            // Drag vector: parallel to relative velocity (opposite direction), magnitude D
+            const drag_x = -D * Math.cos(phi_rad) * forceScale;
+            const drag_y = -D * Math.sin(phi_rad) * forceScale;
+            const dragVector = [
+                { x: 0, y: 0 }, // Tail at airfoil
+                { x: drag_x, y: drag_y } // Head points opposite to flow
+            ];
             
-            // Label AoA
-            const midAngle = -phi / 2;
-            const labelX = arcRadius * 1.3 * Math.cos(midAngle);
-            const labelY = arcRadius * 1.3 * Math.sin(midAngle);
-            ctx.font = '14px Arial';
-            ctx.fillStyle = '#9966ff';
-            ctx.fillText('φ', labelX, labelY);
+            // Resultant force vector: vector sum of lift and drag
+            const resultant_x = lift_x + drag_x;
+            const resultant_y = lift_y + drag_y;
+            const resultantForceVector = [
+                { x: 0, y: 0 }, // Tail at airfoil
+                { x: resultant_x, y: resultant_y } // Head is sum of L and D
+            ];
             
-            ctx.restore();
-        }
-        
-        // Helper function to draw labeled vector
-        function drawVector(ctx, x, y, dx, dy, color, label, width = 2) {
-            const length = Math.sqrt(dx * dx + dy * dy);
-            if (length < 1) return;
+            // Thrust vector: axial force (thrust = L*cos(phi) + D*sin(phi))
+            const thrustVector = [
+                { x: 0, y: 0 }, // Tail at airfoil
+                { x: -thrust * forceScale, y: 0 } // Head points in axial direction (normal to disc)
+            ];
             
-            const angle = Math.atan2(dy, dx);
-            const headLength = 10;
+            // Update chart datasets
+            sectionChart.data.datasets[0].data = airfoilPoints; // Airfoil
+            sectionChart.data.datasets[1].data = vtVector; // V_tangential
+            sectionChart.data.datasets[2].data = vnVector; // V_normal
+            sectionChart.data.datasets[3].data = vResultantVector; // V_resultant
+            sectionChart.data.datasets[4].data = liftVector; // Lift
+            sectionChart.data.datasets[5].data = dragVector; // Drag
+            sectionChart.data.datasets[6].data = resultantForceVector; // Resultant Force
+            sectionChart.data.datasets[7].data = thrustVector; // Thrust
+            sectionChart.data.datasets[8].data = []; // Tangential Force (not used)
             
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + dx, y + dy);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = width;
-            ctx.stroke();
-            
-            // Arrowhead
-            ctx.beginPath();
-            ctx.moveTo(x + dx, y + dy);
-            ctx.lineTo(x + dx - headLength * Math.cos(angle - Math.PI / 6), y + dy - headLength * Math.sin(angle - Math.PI / 6));
-            ctx.lineTo(x + dx - headLength * Math.cos(angle + Math.PI / 6), y + dy - headLength * Math.sin(angle + Math.PI / 6));
-            ctx.closePath();
-            ctx.fillStyle = color;
-            ctx.fill();
-            
-            // Label
-            ctx.font = 'bold 14px Arial';
-            ctx.fillStyle = color;
-            const labelOffset = 15;
-            const labelX = x + dx + labelOffset * Math.cos(angle);
-            const labelY = y + dy + labelOffset * Math.sin(angle);
-            ctx.fillText(label, labelX, labelY);
+            sectionChart.update('none');
         }
         
         // Perform DFT analysis on a signal
@@ -3435,7 +3884,10 @@
             
             // Flow angle and angle of attack
             const phi = Math.atan2(Vn, Vt);
-            const aoa = -(phi * 180 / Math.PI - twist + turbineParams.bladePitch);
+            // Convert bladePitch from new convention (0=disc, 90=feathered) to actual angle
+            const actualPitchAngle = turbineParams.bladePitch - 90;
+            // AoA = blade angle (twist + pitch) - advance angle (phi)
+            const aoa = (twist + actualPitchAngle) - (phi * 180 / Math.PI);
             
             // Dynamic pressure
             const V_total = Math.sqrt(Vt * Vt + Vn * Vn);
