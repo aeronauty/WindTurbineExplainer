@@ -343,6 +343,40 @@
 <body>
     <div id="canvas-container"></div>
     
+    <!-- Twist Settings Modal -->
+    <div id="twist-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center;">
+        <div style="background: white; padding: 30px; border-radius: 10px; max-width: 500px; width: 90%;">
+            <h3 style="margin-top: 0; color: #667eea;">Blade Twist Distribution</h3>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 20px;">
+                Define the twist angle from blade root to tip. Typical wind turbines have higher twist at the root for better performance at low speeds.
+            </p>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Root Twist: <span id="twist-root-display">14</span>°</label>
+                <input type="range" id="twist-root" min="-20" max="45" value="14" step="0.5" style="width: 100%;">
+                <div style="font-size: 0.85em; color: #888; margin-top: 3px;">Twist angle at blade root (hub)</div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 500;">Tip Twist: <span id="twist-tip-display">0</span>°</label>
+                <input type="range" id="twist-tip" min="-20" max="45" value="0" step="0.5" style="width: 100%;">
+                <div style="font-size: 0.85em; color: #888; margin-top: 3px;">Twist angle at blade tip</div>
+            </div>
+            
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                <div style="font-size: 0.9em; font-weight: 500; margin-bottom: 5px;">Common Presets:</div>
+                <button class="twist-preset" data-root="14" data-tip="0" style="margin: 3px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Standard (14°-0°)</button>
+                <button class="twist-preset" data-root="20" data-tip="0" style="margin: 3px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">High Twist (20°-0°)</button>
+                <button class="twist-preset" data-root="10" data-tip="-5" style="margin: 3px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Low Twist (10°-(-5)°)</button>
+                <button class="twist-preset" data-root="0" data-tip="0" style="margin: 3px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;">No Twist (0°-0°)</button>
+            </div>
+            
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button id="twist-close-btn" style="padding: 8px 20px; background: #ccc; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">Close</button>
+            </div>
+        </div>
+    </div>
+    
     <div id="controls-panel">
         <div class="panel-header">
             <h2>🌬️ Wind Turbine Controls</h2>
@@ -350,13 +384,23 @@
         </div>
         <div id="controls-content">
             <div class="control-group">
-                <label>Wind Speed: <span class="value-display" id="wind-speed-value">10.0</span> m/s</label>
-                <input type="range" id="wind-speed" min="0" max="25" value="10" step="0.5">
+                <label>Wind Speed: <span class="value-display" id="wind-speed-value">7.0</span> m/s</label>
+                <input type="range" id="wind-speed" min="0" max="25" value="7" step="0.5">
             </div>
             
             <div class="control-group">
-                <label>Shaft Speed: <span class="value-display" id="shaft-speed-value">10.0</span> RPM</label>
-                <input type="range" id="shaft-speed" min="0" max="20" value="10" step="0.5">
+                <label>Shaft Speed: <span class="value-display" id="shaft-speed-value">15.0</span> RPM</label>
+                <input type="range" id="shaft-speed" min="0" max="20" value="15" step="0.5">
+                <label style="font-size: 0.9em; margin-top: 5px;">
+                    <input type="checkbox" id="dynamic-speed"> Dynamic Speed (Physics-Based)
+                </label>
+            </div>
+            
+            <div class="control-group" id="dynamic-speed-params" style="display: none; margin-left: 15px; border-left: 2px solid #667eea; padding-left: 10px;">
+                <label style="font-size: 0.9em;">Generator Torque: <span class="value-display" id="gen-torque-value">50000</span> N⋅m</label>
+                <input type="range" id="generator-torque" min="10000" max="100000" value="50000" step="1000">
+                <label style="font-size: 0.9em;">Rotor Inertia: <span class="value-display" id="rotor-inertia-value">1000000</span> kg⋅m²</label>
+                <input type="range" id="rotor-inertia" min="0" max="5000000" value="1000000" step="50000">
             </div>
             
             <div class="control-group">
@@ -372,9 +416,10 @@
             </div>
             
             <div class="control-group">
-                <label>Blade Pitch: <span class="value-display" id="blade-pitch-value">0.0</span>°</label>
-                <input type="range" id="blade-pitch" min="-10" max="90" value="0" step="1">
+                <label>Blade Pitch: <span class="value-display" id="blade-pitch-value">5.0</span>°</label>
+                <input type="range" id="blade-pitch" min="-10" max="90" value="5" step="1">
                 <div class="info-text">0° = in disc plane, 90° = fully feathered</div>
+                <button id="twist-settings-btn" style="margin-top: 5px; padding: 5px 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9em;">⚙️ Twist Settings</button>
             </div>
             
             <div class="control-group">
@@ -414,6 +459,20 @@
                     <input type="checkbox" id="show-heatmap" checked=""> Show Load Heatmap
                 </label>
                 <div class="info-text">Color-coded blade loads</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="debug-camber"> 🐛 Debug: Super Extra Camber
+                </label>
+                <div class="info-text">Exaggerate camber to verify blade orientation</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="show-wind-vector" checked> Show Wind Vector
+                </label>
+                <div class="info-text">Display incoming wind direction arrow</div>
             </div>
             
             <div class="control-group">
@@ -463,9 +522,16 @@
             
             <div id="loading-tab" class="spanwise-tab-content active">
                 <div style="padding: 10px; height: 100%;">
-                    <p style="font-size: 0.9em; margin: 5px 0 10px 0;">Thrust distribution along blade span</p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <p style="font-size: 0.9em; margin: 0;">Loading distribution along blade span</p>
+                        <select id="spanwise-force-type" style="padding: 3px 8px; font-size: 0.9em;">
+                            <option value="thrust">Thrust</option>
+                            <option value="tangential">Tangential Force</option>
+                            <option value="resultant">Resultant Force</option>
+                        </select>
+                    </div>
                     <div style="height: 450px;">
-                        <canvas id="spanwise-chart"></canvas>
+                    <canvas id="spanwise-chart"></canvas>
                     </div>
                 </div>
             </div>
@@ -475,13 +541,25 @@
                     <p style="font-size: 0.9em; margin: 5px 0 10px 0;">
                         Airfoil section with velocity vectors
                         <button id="reset-zoom-btn" style="margin-left: 10px; padding: 2px 8px; font-size: 0.85em;">Reset View</button>
+                        <label style="margin-left: 15px; font-size: 0.85em;">
+                            <input type="checkbox" id="reverse-x-axis"> Reverse X
+                        </label>
+                        <label style="margin-left: 10px; font-size: 0.85em;">
+                            <input type="checkbox" id="reverse-y-axis"> Reverse Y
+                        </label>
+                        <label style="margin-left: 15px; font-size: 0.85em;">
+                            <input type="checkbox" id="show-section-plane"> Show Plane
+                        </label>
+                    </p>
+                    <p style="font-size: 0.85em; margin: 5px 0; font-family: monospace; background: #f0f0f0; padding: 5px 8px; border-radius: 3px;">
+                        Twist = <span id="twist-display">0.00</span>° | Pitch(raw) = <span id="pitch-raw-display">0.00</span>° | Pitch(actual) = <span id="pitch-display">0.00</span>° | Total = <span id="total-twist-display">0.00</span>° | φ = <span id="phi-display">0.00</span>° | AoA = <span id="aoa-display">0.00</span>°
                     </p>
                     <div style="margin-bottom: 10px;">
                         <label style="font-size: 0.9em;">Radial Station (% span): <span class="value-display" id="section-station-value">50</span></label>
                         <input type="range" id="section-radial-station" min="10" max="95" value="50" step="5" style="width: 100%;">
                     </div>
                     <div style="height: 400px;">
-                        <canvas id="section-chart"></canvas>
+                    <canvas id="section-chart"></canvas>
                     </div>
                 </div>
             </div>
@@ -681,10 +759,12 @@
         
         // Turbine parameters
         const turbineParams = {
-            windSpeed: 10,
-            shaftSpeed: 10,
-            bladePitch: 0,
-            bladeTwist: 15, // Total twist from root to tip in degrees
+            windSpeed: 7,      // Reduced from 10 to 7 m/s for better initial TSR
+            shaftSpeed: 15,    // Increased from 10 to 15 RPM to avoid stall deadlock
+            bladePitch: 5,     // Added 5° pitch to improve initial AoA
+            bladeTwist: 15, // Total twist from root to tip in degrees (DEPRECATED - use twist params below)
+            twistRoot: 14,  // Twist angle at blade root (degrees)
+            twistTip: 0,    // Twist angle at blade tip (degrees)
             numBlades: 3,
             yawAngle: 0,
             inflowAngle: 0,
@@ -696,13 +776,21 @@
             vectorScale: 0.1,    // Force vector scale factor
             vectorMode: 'all',   // 'all' or 'single' blade
             showHeatmap: true,   // Show load heatmap on blades
+            debugCamber: false,  // Debug mode: super extra camber
+            showWindVector: true, // Show wind vector arrow
             angularResolution: 1.0,  // Angular resolution in degrees (0.333 to 15)
             paused: false,       // Pause rotation
             manualRotation: 0,   // Manual rotation angle in degrees
             windFarmMode: false, // Enable multiple turbines
             farmTurbineCount: 5, // Total turbines in wind farm
             speedVariation: 0.05, // ±5% speed variation
-            removeMean: false    // Remove 0P (mean) component from loads
+            removeMean: false,   // Remove 0P (mean) component from loads
+            // Dynamic speed mode parameters
+            dynamicSpeed: false, // Use physics-based speed
+            rotorInertia: 1000000, // Rotor moment of inertia (kg⋅m²)
+            generatorTorque: 50000, // Generator resistance torque (N⋅m)
+            dampingCoeff: 5000,  // Damping coefficient for stability
+            angularVelocity: 15 * 2 * Math.PI / 60   // Current angular velocity (rad/s), initialized to match shaftSpeed (TSR ≈ 4.5)
         };
         
         // Data history for plotting
@@ -734,6 +822,7 @@
             totalMomentY: [],
             totalMomentZ: [],
             complete: false,
+            everCompleted: false,  // Track if we've ever had valid data (for display during re-collection)
             fastMode: false,  // Use fast collection for first revolution
             lastCollectionTime: 0,
             samplingInterval: 0,
@@ -916,6 +1005,71 @@
         tower.castShadow = true;
         scene.add(tower);
         
+        // Wind vector arrow (declare here so it's accessible in the function below)
+        let windVectorArrow = null;
+        
+        // Create wind vector arrow
+        function createWindVectorArrow() {
+            // Only create/update if wind vector is enabled
+            if (!turbineParams.showWindVector) {
+                if (windVectorArrow) {
+                    scene.remove(windVectorArrow);
+                    windVectorArrow = null;
+                }
+                return;
+            }
+            
+            // Remove old arrow if it exists
+            if (windVectorArrow) {
+                scene.remove(windVectorArrow);
+            }
+            
+            // Calculate wind direction from yaw and inflow angles
+            const V = turbineParams.windSpeed;
+            const yawRad = turbineParams.yawAngle * Math.PI / 180;
+            const inflowRad = turbineParams.inflowAngle * Math.PI / 180;
+            
+            // Wind velocity components - matching aerodynamics code AND rotor axes
+            // Rotor axes: X = rotation axis (perpendicular to disc), Y-Z = disc plane
+            // Base wind comes from -X direction (toward rotor from front)
+            // x = axial (thrust direction) - NEGATIVE because wind comes from -X
+            // y = vertical in-plane (inflow component)  
+            // z = horizontal in-plane (yaw component)
+            const V_x = -V * Math.cos(inflowRad) * Math.cos(yawRad);  // Negative X for wind from front
+            const V_y = V * Math.sin(inflowRad);
+            const V_z = V * Math.sin(yawRad) * Math.cos(inflowRad);
+            
+            // Wind direction (unit vector) - points from upwind toward turbine
+            const windDir = new THREE.Vector3(V_x, V_y, V_z).normalize();
+            
+            // Position arrow in front of turbine (upwind side)
+            const arrowLength = Math.max(V * 2, 10); // Scale with wind speed
+            const hubHeight = turbineParams.towerHeight + groundHeightAtTurbine;
+            const arrowOrigin = new THREE.Vector3(
+                -windDir.x * 40, // 40m upwind (negative X direction)
+                hubHeight - windDir.y * 40,
+                -windDir.z * 40
+            );
+            
+            // Create arrow (cyan color, highly visible)
+            windVectorArrow = new THREE.ArrowHelper(
+                windDir,
+                arrowOrigin,
+                arrowLength,
+                0x00ffff, // Cyan
+                arrowLength * 0.3, // Head length
+                arrowLength * 0.2  // Head width
+            );
+            
+            // Make arrow thicker
+            windVectorArrow.line.material.linewidth = 4;
+            
+            scene.add(windVectorArrow);
+        }
+        
+        // Create initial wind arrow
+        createWindVectorArrow();
+        
         // Add infinite sky sphere
         const skyGeo = new THREE.SphereGeometry(10000, 64, 64);
         const skyMat = new THREE.ShaderMaterial({
@@ -1030,11 +1184,225 @@
         const blades = [];
         const bladeSegments = [];
         let forceArrows = [];
+        // windVectorArrow is now declared earlier (line 1001)
+        
+        // Section plane visualization (circular disc at selected radial station)
+        let sectionPlane = null;
+        
+        function createSectionPlane() {
+            if (sectionPlane) {
+                rotorGroup.remove(sectionPlane);
+            }
+            
+            const percent = turbineParams.radialStation;
+            const radius = percent * turbineParams.bladeRadius;
+            
+            // Create a circular disc
+            const planeGeometry = new THREE.RingGeometry(radius - 0.5, radius + 0.5, 64);
+            const planeMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffff00,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.6
+            });
+            
+            sectionPlane = new THREE.Mesh(planeGeometry, planeMaterial);
+            sectionPlane.rotation.x = Math.PI / 2; // Rotate to be perpendicular to blade
+            rotorGroup.add(sectionPlane);
+        }
+        
+        function toggleSectionPlane(show) {
+            if (show) {
+                createSectionPlane();
+            } else if (sectionPlane) {
+                rotorGroup.remove(sectionPlane);
+                sectionPlane = null;
+            }
+        }
         
         // Helper to iterate all meshes for photo mode
         function forEachMesh(fn){
             fn(tower); fn(nacelle); fn(hub); fn(ground);
             bladeSegments.forEach(fn);
+        }
+        
+        // Realistic lift coefficient function for wind turbine airfoils
+        // Based on NREL airfoil data with stall behavior
+        function getLiftCoefficient(aoa_deg, thickness_ratio) {
+            const aoa = aoa_deg; // AoA in degrees
+            
+            // Different airfoil families have different characteristics
+            let Cl_alpha, aoa_stall, Cl_max, Cl_min;
+            
+            if (thickness_ratio > 0.35) {
+                // Thick root airfoils (40% t/c) - more structural, earlier stall
+                Cl_alpha = 0.095;  // Lift slope (per degree)
+                aoa_stall = 12;    // Stall angle (degrees)
+                Cl_max = 1.3;      // Maximum lift coefficient
+                Cl_min = -1.2;
+            } else if (thickness_ratio > 0.22) {
+                // Mid-span airfoils (24-30% t/c) - good performance
+                Cl_alpha = 0.105;  // Lift slope (per degree)
+                aoa_stall = 14;    // Stall angle (degrees)
+                Cl_max = 1.5;      // Maximum lift coefficient
+                Cl_min = -1.4;
+            } else {
+                // Tip airfoils (18% t/c) - thin, high performance
+                Cl_alpha = 0.110;  // Lift slope (per degree)
+                aoa_stall = 16;    // Stall angle (degrees)
+                Cl_max = 1.6;      // Maximum lift coefficient
+                Cl_min = -1.5;
+            }
+            
+            // Zero-lift angle (slight positive camber)
+            const aoa_0 = -2;
+            
+            let Cl;
+            
+            if (aoa < aoa_0 + aoa_stall && aoa > aoa_0 - aoa_stall) {
+                // Linear region
+                Cl = Cl_alpha * (aoa - aoa_0);
+            } else if (aoa >= aoa_0 + aoa_stall) {
+                // Positive stall region - smooth transition
+                const delta_aoa = aoa - (aoa_0 + aoa_stall);
+                Cl = Cl_max * Math.exp(-0.1 * delta_aoa); // Exponential decay after stall
+                
+                // Post-stall flat plate (high AoA)
+                if (aoa > 45) {
+                    Cl = 2 * Math.sin(aoa * Math.PI / 180) * Math.cos(aoa * Math.PI / 180);
+                }
+            } else {
+                // Negative stall region
+                const delta_aoa = (aoa_0 - aoa_stall) - aoa;
+                Cl = Cl_min * Math.exp(-0.1 * delta_aoa);
+                
+                if (aoa < -45) {
+                    Cl = 2 * Math.sin(aoa * Math.PI / 180) * Math.cos(aoa * Math.PI / 180);
+                }
+            }
+            
+            return Cl;
+        }
+        
+        // Realistic drag coefficient function for wind turbine airfoils
+        function getDragCoefficient(aoa_deg, thickness_ratio) {
+            const aoa = aoa_deg; // AoA in degrees
+            
+            // Minimum drag varies with thickness
+            let Cd_min, aoa_minD;
+            
+            if (thickness_ratio > 0.35) {
+                // Thick airfoils - higher drag
+                Cd_min = 0.012;
+                aoa_minD = 2;  // Design AoA
+            } else if (thickness_ratio > 0.22) {
+                // Mid-span airfoils
+                Cd_min = 0.008;
+                aoa_minD = 4;
+            } else {
+                // Thin tip airfoils - lowest drag
+                Cd_min = 0.006;
+                aoa_minD = 5;
+            }
+            
+            // Drag polar: parabolic in attached flow, high in stall
+            const aoa_diff = aoa - aoa_minD;
+            
+            // Pre-stall drag (parabolic)
+            let Cd = Cd_min + 0.0005 * aoa_diff * aoa_diff;
+            
+            // Stall drag increases sharply
+            if (Math.abs(aoa) > 15) {
+                const stall_factor = Math.abs(aoa) - 15;
+                Cd += 0.02 * stall_factor;
+            }
+            
+            // Post-stall flat plate drag
+            if (Math.abs(aoa) > 45) {
+                Cd = 2 * Math.sin(aoa * Math.PI / 180) * Math.sin(aoa * Math.PI / 180);
+            }
+            
+            return Cd;
+        }
+        
+        // Create NREL-style airfoil cross-section with region-specific shapes
+        // thickness_ratio: t/c (0.18 for tip, 0.40 for root)
+        // spanFraction: 0 (root) to 1 (tip)
+        function createAirfoilShape(chord, thickness_ratio, spanFraction) {
+            const shape = new THREE.Shape();
+            
+            // Define airfoil characteristics based on span location (like NREL families)
+            // Root region (0-30% span): Thick, structural, more circular
+            // Mid region (30-70% span): Primary aerodynamic, moderate camber
+            // Tip region (70-100% span): Thin, high-performance, less camber
+            
+            let camberAmount, maxThicknessLoc, leadingEdgeRadius;
+            
+            if (spanFraction < 0.3) {
+                // Root region - thick structural airfoil
+                camberAmount = 0.015;  // Less camber
+                maxThicknessLoc = 0.35; // Thickness further back
+                leadingEdgeRadius = 1.2; // Blunter leading edge
+            } else if (spanFraction < 0.7) {
+                // Mid-span region - primary aerodynamic airfoil
+                camberAmount = 0.025;  // More camber for lift
+                maxThicknessLoc = 0.30; // Standard location
+                leadingEdgeRadius = 1.0; // Standard leading edge
+            } else {
+                // Tip region - thin high-performance airfoil
+                camberAmount = 0.018;  // Moderate camber
+                maxThicknessLoc = 0.28; // Thickness slightly forward
+                leadingEdgeRadius = 0.8; // Sharper leading edge
+            }
+            
+            // DEBUG MODE: Super extra camber to verify orientation
+            if (turbineParams.debugCamber) {
+                camberAmount = 0.15;  // 15% camber - super obvious!
+            }
+            
+            const numPoints = 40;
+            const points_upper = [];
+            const points_lower = [];
+            
+            // Generate airfoil coordinates
+            for (let i = 0; i <= numPoints; i++) {
+                // Cosine spacing for better leading edge resolution
+                const t = i / numPoints;
+                const x = chord * (1 - Math.cos(t * Math.PI)) / 2;
+                const x_norm = x / chord;
+                
+                // Modified NACA thickness distribution with adjustable parameters
+                const yt = 5 * thickness_ratio * chord * leadingEdgeRadius * (
+                    0.2969 * Math.sqrt(x_norm) -
+                    0.1260 * x_norm -
+                    0.3516 * x_norm * x_norm +
+                    0.2843 * x_norm * x_norm * x_norm -
+                    0.1036 * x_norm * x_norm * x_norm * x_norm
+                );
+                
+                // Camber line - varies by region
+                const camber = camberAmount * chord * 4 * (x_norm - x_norm * x_norm);
+                
+                // Flip airfoil 180° by negating X coordinate (LE should face forward into rotation)
+                // Also negate camber to orient correctly in 3D space
+                points_upper.push(new THREE.Vector2(-(x - chord/2), -camber + yt));
+                points_lower.push(new THREE.Vector2(-(x - chord/2), -camber - yt));
+            }
+            
+            // Create shape (start at trailing edge, go around)
+            shape.moveTo(points_upper[numPoints].x, points_upper[numPoints].y);
+            
+            // Upper surface (TE to LE)
+            for (let i = numPoints; i >= 0; i--) {
+                shape.lineTo(points_upper[i].x, points_upper[i].y);
+            }
+            
+            // Lower surface (LE to TE)
+            for (let i = 0; i <= numPoints; i++) {
+                shape.lineTo(points_lower[i].x, points_lower[i].y);
+            }
+            
+            return shape;
         }
         
         function createBlade() {
@@ -1054,20 +1422,55 @@
                 
                 const chord = 1.5 * (1 - i / numSegments) + 0.3;
                 
-                // Calculate twist for this segment (linear twist from root to tip)
+                // Calculate twist for this segment
+                // For constant AoA design: twist should vary to maintain constant flow angle
+                // phi = atan(Vn/Vt) = atan(V_axial / (omega*r))
+                // To maintain constant AoA, twist varies inversely with radius
                 const spanFraction = i / numSegments;
-                const twist = turbineParams.bladeTwist * (1 - spanFraction); // More twist at root, less at tip
+                const r_norm = spanFraction;  // Normalized radius from 0 (root) to 1 (tip)
                 
-                const segmentGeometry = new THREE.BoxGeometry(0.2, segmentLength, chord);
+                // Use 1/r distribution for more optimal twist (maintains more constant AoA)
+                // Avoid division by zero at root by using actual radius values
+                const r_actual = turbineParams.hubRadius + r_norm * (turbineParams.bladeRadius - turbineParams.hubRadius);
+                const r_root = turbineParams.hubRadius;
+                const r_tip = turbineParams.bladeRadius;
+                
+                // Inverse radius weighting: twist(r) varies as 1/r for constant AoA
+                const twist_weight = (r_tip / r_actual - 1) / (r_tip / r_root - 1);
+                const twist = turbineParams.twistRoot * twist_weight + turbineParams.twistTip * (1 - twist_weight);
+                
+                // NREL-style thickness distribution: thick at root (40%), thin at tip (18%)
+                // Root region: 40% t/c, Mid-span: 24-30% t/c, Tip: 18% t/c
+                const thickness_ratio = 0.40 * (1 - spanFraction) + 0.18 * spanFraction;
+                
+                // Create airfoil shape and extrude along span (pass spanFraction for region-specific shapes)
+                const airfoilShape = createAirfoilShape(chord, thickness_ratio, spanFraction);
+                const extrudeSettings = {
+                    depth: segmentLength,
+                    bevelEnabled: false,
+                    curveSegments: 12
+                };
+                
+                const segmentGeometry = new THREE.ExtrudeGeometry(airfoilShape, extrudeSettings);
+                
+                // Rotate geometry to align with blade coordinates
+                // Extrusion goes along Z, but we want it along Y (spanwise)
+                segmentGeometry.rotateX(Math.PI / 2);
+                
                 const segmentMaterial = new THREE.MeshPhongMaterial({ 
                     color: 0x4444ff,
                     shininess: 30,
-                    specular: 0x222222
+                    specular: 0x222222,
+                    side: THREE.DoubleSide  // Render both sides for better visibility
                 });
                 const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
                 
-                segment.position.y = r + segmentLength / 2;
+                segment.position.y = r;
                 segment.castShadow = true;
+                segment.receiveShadow = true;
+                
+                // Apply twist rotation to segment geometry
+                segment.rotation.y = twist * Math.PI / 180;  // Convert twist to radians and rotate around span-wise axis
                 
                 segment.userData.radius = r + segmentLength / 2;
                 segment.userData.chord = chord;
@@ -1273,11 +1676,13 @@
                     const r = segment.userData.radius;
                     const chord = segment.userData.chord;
                     
-                    // Blade twist distribution (typical for wind turbine)
-                    // Higher twist at root (low speed), lower at tip (high speed)
-                    // Range: ~14° at root to ~0° at tip
+                    // Blade twist distribution (optimal for constant AoA)
+                    // Varies inversely with radius to maintain constant flow angle
                     const r_norm = (r - turbineParams.hubRadius) / (turbineParams.bladeRadius - turbineParams.hubRadius);
-                    const twist = 14 * (1 - r_norm); // Linear twist from 14° at root to 0° at tip
+                    const r_root = turbineParams.hubRadius;
+                    const r_tip = turbineParams.bladeRadius;
+                    const twist_weight = (r_tip / r - 1) / (r_tip / r_root - 1);
+                    const twist = turbineParams.twistRoot * twist_weight + turbineParams.twistTip * (1 - twist_weight);
                     
                     // Velocities in rotor disc coordinates
                     // alpha = angle of attack (inflow), beta = sideslip (yaw)
@@ -1302,14 +1707,14 @@
                     const Vt = omega * r + V_inplane_tangential;
                     
                     // Normal velocity (axial wind + induction)
-                    const Vn = -V_z * (1 - 0.3); // With induction factor
+                    const Vn = V_z * (1 - 0.3); // With induction factor - should be positive
                     
                     // Flow angle and angle of attack
                     const phi = Math.atan2(Vn, Vt);
-                    // Convert bladePitch from new convention (0=disc, 90=feathered) to actual angle
-                    const actualPitchAngle = turbineParams.bladePitch - 90;
+                    // Use bladePitch directly for aerodynamics (slider value is the aerodynamic angle)
+                    const aeroPitchAngle = turbineParams.bladePitch;
                     // AoA = blade angle (twist + pitch) - advance angle (phi)
-                    const aoa = (twist + actualPitchAngle) - (phi * 180 / Math.PI);
+                    const aoa = (twist + aeroPitchAngle) - (phi * 180 / Math.PI);
                     
                     totalAoA += aoa;
                     aoaCount++;
@@ -1318,15 +1723,26 @@
                     const V_total = Math.sqrt(Vt * Vt + Vn * Vn);
                     const q = 0.5 * 1.225 * V_total * V_total * chord * (turbineParams.bladeRadius / 100);
                     
-                    // Simple aerodynamic model
-                    // Lift: 2π lift slope (thin airfoil theory)
-                    // Drag: constant 5% of lift magnitude
-                    const Cl = 2 * Math.PI * Math.sin(aoa * Math.PI / 180);
+                    // Realistic aerodynamic model with stall
+                    // Get thickness ratio for this span location
+                    const spanFrac = (r - turbineParams.hubRadius) / (turbineParams.bladeRadius - turbineParams.hubRadius);
+                    const thickness_ratio = 0.40 * (1 - spanFrac) + 0.18 * spanFrac;
+                    
+                    // Get lift and drag coefficients
+                    const Cl = getLiftCoefficient(aoa, thickness_ratio);
+                    const Cd = getDragCoefficient(aoa, thickness_ratio);
+                    
                     const L = q * Cl;
-                    const D = 0.05 * Math.abs(L);
+                    const D = q * Cd;
                     
                     // Thrust (axial force)
                     const thrust = L * Math.cos(phi) + D * Math.sin(phi);
+                    
+                    // Tangential force (drives rotation)
+                    const tangentialForce = L * Math.sin(phi) - D * Math.cos(phi);
+                    
+                    // Resultant force (magnitude of total force)
+                    const resultantForce = Math.sqrt(L*L + D*D);
                     
                     // Store values (including azimuth for consistent plotting)
                     const load = Math.abs(thrust);
@@ -1335,6 +1751,8 @@
                     segment.userData.totalVelocity = V_total;
                     segment.userData.azimuth = azimuth;
                     segment.userData.thrust = thrust;
+                    segment.userData.tangentialForce = tangentialForce;
+                    segment.userData.resultantForce = resultantForce;
                     segment.userData.L = L;  // Store lift for resultant vector
                     segment.userData.D = D;  // Store drag for resultant vector
                     segment.userData.phi = phi;  // Store flow angle for resultant vector
@@ -1518,6 +1936,85 @@
                     updatePlotData(omega);
                 }
             }
+        }
+        
+        // Calculate total aerodynamic torque on the rotor
+        function calculateAerodynamicTorque() {
+            let totalTorque = 0;
+            const omega = turbineParams.angularVelocity; // Use actual angular velocity, not shaft speed
+            
+            blades.forEach((blade, bladeIndex) => {
+                blade.segments.forEach((segment, segIdx) => {
+                    const r = segment.userData.radius;
+                    const L = segment.userData.L || 0;
+                    const D = segment.userData.D || 0;
+                    const phi = segment.userData.phi || 0;
+                    
+                    // Tangential force creates torque
+                    // F_tangent = L * sin(phi) - D * cos(phi)
+                    const F_tangent = L * Math.sin(phi) - D * Math.cos(phi);
+                    
+                    // Torque = force × radius
+                    const segmentTorque = F_tangent * r;
+                    totalTorque += segmentTorque;
+                });
+            });
+            
+            return totalTorque;
+        }
+        
+        // Update rotor dynamics (called each frame when dynamicSpeed is enabled)
+        function updateRotorDynamics(dt) {
+            if (!turbineParams.dynamicSpeed || turbineParams.paused) return;
+            
+            // Calculate aerodynamic torque
+            const T_aero = calculateAerodynamicTorque();
+            
+            // Generator torque (resistance) - proportional to speed squared (more realistic)
+            const omega = turbineParams.angularVelocity;
+            const T_gen = turbineParams.generatorTorque * Math.sign(omega) * (omega * omega) / (1.0 * 1.0); // Normalized to 1 rad/s
+            
+            // Damping torque (for stability)
+            const T_damp = turbineParams.dampingCoeff * omega;
+            
+            // Startup assistance torque (helps turbine start from zero speed)
+            // This simulates a motor or the fact that at very low speeds, the turbine can still catch the wind
+            // Decays as speed increases
+            const omega_threshold = 0.5; // rad/s - below this, add startup torque
+            let T_startup = 0;
+            if (omega < omega_threshold && turbineParams.windSpeed > 0) {
+                // Startup torque proportional to wind speed, decreases with omega
+                T_startup = 50000 * turbineParams.windSpeed * (1 - omega / omega_threshold);
+            }
+            
+            // Net torque
+            const T_net = T_aero + T_startup - T_gen - T_damp;
+            
+            // Angular acceleration = Torque / Inertia
+            // Handle zero inertia case (instantaneous response)
+            let alpha;
+            if (turbineParams.rotorInertia > 0) {
+                alpha = T_net / turbineParams.rotorInertia;
+            } else {
+                // Zero inertia: instantaneous equilibrium
+                // Just maintain current speed or apply small change
+                alpha = T_net * 0.0001; // Very small response to avoid instability
+            }
+            
+            // Update angular velocity (Euler integration)
+            turbineParams.angularVelocity += alpha * dt;
+            
+            // Prevent negative rotation (unphysical for wind turbine)
+            if (turbineParams.angularVelocity < 0) {
+                turbineParams.angularVelocity = 0;
+            }
+            
+            // Update shaft speed in RPM for display
+            turbineParams.shaftSpeed = turbineParams.angularVelocity * 60 / (2 * Math.PI);
+            
+            // Update the display
+            document.getElementById('shaft-speed-value').textContent = turbineParams.shaftSpeed.toFixed(1);
+            document.getElementById('shaft-speed').value = Math.min(20, turbineParams.shaftSpeed); // Clamp slider to max
         }
         
         // Photo Mode Enable/Disable Functions
@@ -1967,7 +2464,7 @@
                 // Check if we've completed one revolution
                 if (fourierData.collecting) {
                     const currentAzimuth = rotorGroup.rotation.x;
-                    const angleTraveled = currentAzimuth - fourierData.startAzimuth;
+                    const angleTraveled = Math.abs(currentAzimuth - fourierData.startAzimuth);  // Use absolute value since rotation is now negative
                     const angleInDegrees = (angleTraveled * 180 / Math.PI) % 360;
                     
                     // Check if enough angular distance has passed since last collection
@@ -1990,12 +2487,25 @@
                     if (angleTraveled >= 2 * Math.PI) {
                         fourierData.collecting = false;
                         fourierData.complete = true;
+                        fourierData.everCompleted = true;  // Mark that we've had valid data at least once
                         // After first fast collection, switch to normal mode for subsequent collections
                         if (fourierData.fastMode) {
                             fourierData.fastMode = false;
                             // Clear all trace data after fast collection completes
                             initPlotData();
                             updateCharts();
+                        }
+                        
+                        // In dynamic speed mode, automatically restart collection for next revolution
+                        // This keeps the Fourier analysis up-to-date as loads change
+                        // But only do it at normal speed (fastMode is now false)
+                        if (turbineParams.dynamicSpeed) {
+                            setTimeout(() => {
+                                resetFourierCollection();
+                                // Don't re-enable fast mode - keep it at normal speed
+                                fourierData.fastMode = false;
+                                startFourierCollection();
+                            }, 100); // Small delay to ensure display updates
                         }
                     }
                 }
@@ -2238,17 +2748,25 @@
             
             // Check collection status
             if (fourierData.collecting) {
+                // In dynamic speed mode, keep showing old values while collecting new ones
+                // Don't show any "Collecting..." message - just silently update
+                if (fourierData.everCompleted) {
+                    // Already have data from a previous collection, keep displaying it while collecting new
+                    // Fall through to display the existing data below
+                } else {
+                    // First time collecting, show status message
                 const mode = fourierData.fastMode ? ' (fast ' + fourierData.speedMultiplier + 'x)' : '';
                 const statusMsg = '<p style="font-size: 0.85em; color: #999;">Collecting... (' + fourierData.bladeLift.length + ' pts)</p>';
                 thrustContent.innerHTML = statusMsg;
                 momentYContent.innerHTML = statusMsg;
                 momentZContent.innerHTML = statusMsg;
-                aoaContent.innerHTML = statusMsg;
-                velocityContent.innerHTML = statusMsg;
+                    aoaContent.innerHTML = statusMsg;
+                    velocityContent.innerHTML = statusMsg;
                 return;
+                }
             }
             
-            if (!fourierData.complete || fourierData.bladeLift.length < 10) {
+            if (!fourierData.everCompleted || fourierData.bladeLift.length < 10) {
                 const waitMsg = '<p style="font-size: 0.85em; color: #999;">Waiting...</p>';
                 thrustContent.innerHTML = waitMsg;
                 momentYContent.innerHTML = waitMsg;
@@ -3058,6 +3576,36 @@
                         pointRadius: 0,
                         showLine: true,
                         borderWidth: 3
+                    },
+                    {
+                        label: 'Chord Line',
+                        data: [],
+                        backgroundColor: 'transparent',
+                        borderColor: '#000000',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 2,
+                        borderDash: [5, 5]
+                    },
+                    {
+                        label: 'φ (phi)',
+                        data: [],
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderColor: '#4bc0c0',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 2,
+                        fill: true
+                    },
+                    {
+                        label: 'AoA Angle',
+                        data: [],
+                        backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                        borderColor: '#9966ff',
+                        pointRadius: 0,
+                        showLine: true,
+                        borderWidth: 2,
+                        fill: true
                     }
                 ]
             },
@@ -3112,18 +3660,64 @@
             updateSectionDiagram();
         }, 100);
         
-        // Event listeners
+        // Event listeners (with URL state saving)
         document.getElementById('wind-speed').addEventListener('input', (e) => {
             turbineParams.windSpeed = parseFloat(e.target.value);
             document.getElementById('wind-speed-value').textContent = turbineParams.windSpeed.toFixed(1);
+            createWindVectorArrow(); // Update wind arrow
             resetFourierCollection();
             setTimeout(() => calculateSpanwiseYAxisRange(), 50); // Recalculate y-axis for new wind speed
+            debouncedSaveState();
         });
         
         document.getElementById('shaft-speed').addEventListener('input', (e) => {
             turbineParams.shaftSpeed = parseFloat(e.target.value);
             document.getElementById('shaft-speed-value').textContent = turbineParams.shaftSpeed.toFixed(1);
+            // Update angular velocity to match (when not in dynamic mode)
+            if (!turbineParams.dynamicSpeed) {
+                turbineParams.angularVelocity = turbineParams.shaftSpeed * 2 * Math.PI / 60;
+            }
             resetFourierCollection();
+        });
+        
+        // Dynamic speed toggle
+        document.getElementById('dynamic-speed').addEventListener('change', (e) => {
+            turbineParams.dynamicSpeed = e.target.checked;
+            const paramsDiv = document.getElementById('dynamic-speed-params');
+            const shaftSpeedSlider = document.getElementById('shaft-speed');
+            
+            if (turbineParams.dynamicSpeed) {
+                // Show dynamic parameters
+                paramsDiv.style.display = 'block';
+                // Initialize angular velocity from current shaft speed
+                turbineParams.angularVelocity = turbineParams.shaftSpeed * 2 * Math.PI / 60;
+                // Disable manual shaft speed control
+                shaftSpeedSlider.disabled = true;
+                shaftSpeedSlider.style.opacity = '0.5';
+            } else {
+                // Hide dynamic parameters
+                paramsDiv.style.display = 'none';
+                // Re-enable manual shaft speed control
+                shaftSpeedSlider.disabled = false;
+                shaftSpeedSlider.style.opacity = '1.0';
+                // Sync shaft speed from current angular velocity
+                turbineParams.shaftSpeed = turbineParams.angularVelocity * 60 / (2 * Math.PI);
+                document.getElementById('shaft-speed-value').textContent = turbineParams.shaftSpeed.toFixed(1);
+                shaftSpeedSlider.value = Math.min(20, turbineParams.shaftSpeed);
+            }
+            resetFourierCollection();
+        });
+        
+        // Generator torque control
+        document.getElementById('generator-torque').addEventListener('input', (e) => {
+            turbineParams.generatorTorque = parseFloat(e.target.value);
+            document.getElementById('gen-torque-value').textContent = turbineParams.generatorTorque.toFixed(0);
+        });
+        
+        // Rotor inertia control
+        document.getElementById('rotor-inertia').addEventListener('input', (e) => {
+            turbineParams.rotorInertia = parseFloat(e.target.value);
+            document.getElementById('rotor-inertia-value').textContent = turbineParams.rotorInertia.toFixed(0);
         });
         
         document.getElementById('pause-rotation').addEventListener('change', (e) => {
@@ -3158,6 +3752,64 @@
             });
         });
         
+        // Twist Settings Modal Controls
+        const twistModal = document.getElementById('twist-modal');
+        const twistSettingsBtn = document.getElementById('twist-settings-btn');
+        const twistCloseBtn = document.getElementById('twist-close-btn');
+        const twistRootSlider = document.getElementById('twist-root');
+        const twistTipSlider = document.getElementById('twist-tip');
+        const twistRootDisplay = document.getElementById('twist-root-display');
+        const twistTipDisplay = document.getElementById('twist-tip-display');
+        
+        // Open modal
+        twistSettingsBtn.addEventListener('click', () => {
+            twistModal.style.display = 'flex';
+        });
+        
+        // Close modal
+        twistCloseBtn.addEventListener('click', () => {
+            twistModal.style.display = 'none';
+        });
+        
+        // Close on background click
+        twistModal.addEventListener('click', (e) => {
+            if (e.target === twistModal) {
+                twistModal.style.display = 'none';
+            }
+        });
+        
+        // Root twist slider
+        twistRootSlider.addEventListener('input', (e) => {
+            turbineParams.twistRoot = parseFloat(e.target.value);
+            twistRootDisplay.textContent = turbineParams.twistRoot.toFixed(1);
+            resetFourierCollection();
+        });
+        
+        // Tip twist slider
+        twistTipSlider.addEventListener('input', (e) => {
+            turbineParams.twistTip = parseFloat(e.target.value);
+            twistTipDisplay.textContent = turbineParams.twistTip.toFixed(1);
+            resetFourierCollection();
+        });
+        
+        // Preset buttons
+        document.querySelectorAll('.twist-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const root = parseFloat(btn.getAttribute('data-root'));
+                const tip = parseFloat(btn.getAttribute('data-tip'));
+                
+                turbineParams.twistRoot = root;
+                turbineParams.twistTip = tip;
+                
+                twistRootSlider.value = root;
+                twistTipSlider.value = tip;
+                twistRootDisplay.textContent = root.toFixed(1);
+                twistTipDisplay.textContent = tip.toFixed(1);
+                
+                resetFourierCollection();
+            });
+        });
+        
         document.getElementById('num-blades').addEventListener('input', (e) => {
             turbineParams.numBlades = parseInt(e.target.value);
             document.getElementById('num-blades-value').textContent = turbineParams.numBlades;
@@ -3168,6 +3820,7 @@
             turbineParams.yawAngle = parseFloat(e.target.value);
             document.getElementById('yaw-value').textContent = turbineParams.yawAngle.toFixed(1);
             // Don't rotate nacelle - yaw now represents wind direction, turbine stays fixed
+            createWindVectorArrow(); // Update wind arrow
             resetFourierCollection();
             setTimeout(() => calculateSpanwiseYAxisRange(), 50); // Recalculate y-axis for new yaw
         });
@@ -3175,6 +3828,7 @@
         document.getElementById('inflow').addEventListener('input', (e) => {
             turbineParams.inflowAngle = parseFloat(e.target.value);
             document.getElementById('inflow-value').textContent = turbineParams.inflowAngle.toFixed(1);
+            createWindVectorArrow(); // Update wind arrow
             resetFourierCollection();
             setTimeout(() => calculateSpanwiseYAxisRange(), 50); // Recalculate y-axis for new inflow
         });
@@ -3196,6 +3850,17 @@
             turbineParams.showHeatmap = e.target.checked;
         });
         
+        document.getElementById('debug-camber').addEventListener('change', (e) => {
+            turbineParams.debugCamber = e.target.checked;
+            // Rebuild blades with new camber
+            updateBladeCount();
+        });
+        
+        document.getElementById('show-wind-vector').addEventListener('change', (e) => {
+            turbineParams.showWindVector = e.target.checked;
+            createWindVectorArrow(); // Update visibility
+        });
+        
         document.getElementById('remove-mean').addEventListener('change', (e) => {
             turbineParams.removeMean = e.target.checked;
             resetFourierCollection();
@@ -3207,7 +3872,6 @@
         
         document.getElementById('vector-mode').addEventListener('change', (e) => {
             turbineParams.vectorMode = e.target.value;
-            console.log('Vector mode changed to:', turbineParams.vectorMode);
         });
         
         document.getElementById('vector-scale').addEventListener('input', (e) => {
@@ -3270,6 +3934,10 @@
             document.getElementById('station-value').textContent = percent;
             // Update section diagram immediately
             updateSectionDiagram();
+            // Update section plane if it's visible
+            if (document.getElementById('show-section-plane').checked) {
+                createSectionPlane();
+            }
             // Reset plot data when station changes
             initPlotData();
             rebuildCharts();
@@ -3282,6 +3950,27 @@
                 plotData.bladeVelocity[i] = [];
             }
             timeCounter = 0;
+        });
+        
+        // Spanwise force type selector
+        document.getElementById('spanwise-force-type').addEventListener('change', () => {
+            updateSpanwiseChart();
+        });
+        
+        // Reverse axis checkboxes for section chart
+        document.getElementById('reverse-x-axis').addEventListener('change', (e) => {
+            sectionChart.options.scales.x.reverse = e.target.checked;
+            sectionChart.update();
+        });
+        
+        document.getElementById('reverse-y-axis').addEventListener('change', (e) => {
+            sectionChart.options.scales.y.reverse = e.target.checked;
+            sectionChart.update();
+        });
+        
+        // Show section plane checkbox
+        document.getElementById('show-section-plane').addEventListener('change', (e) => {
+            toggleSectionPlane(e.target.checked);
         });
         
         // Reset zoom button for section chart
@@ -3316,8 +4005,13 @@
             // Calculate pan amount based on pixel movement
             const xRange = xScale.max - xScale.min;
             const yRange = yScale.max - yScale.min;
-            const xPan = -(deltaX / sectionChartCanvas.width) * xRange;
-            const yPan = (deltaY / sectionChartCanvas.height) * yRange;
+            
+            // Check if axes are reversed and adjust pan direction accordingly
+            const xReversed = sectionChart.options.scales.x.reverse || false;
+            const yReversed = sectionChart.options.scales.y.reverse || false;
+            
+            const xPan = -(deltaX / sectionChartCanvas.width) * xRange * (xReversed ? -1 : 1);
+            const yPan = (deltaY / sectionChartCanvas.height) * yRange * (yReversed ? -1 : 1);
             
             // Update scales
             sectionChart.options.scales.x.min = xScale.min + xPan;
@@ -3603,21 +4297,46 @@
             const blade = blades[0]; // Blade 1
             if (!blade.segments || blade.segments.length === 0) return;
             
-            // Collect data points from already-calculated thrust values
+            // Get selected force type
+            const forceType = document.getElementById('spanwise-force-type').value;
+            
+            // Collect data points from already-calculated force values
             const dataPoints = [];
+            let minForce = Infinity;
+            let maxForce = -Infinity;
             
             blade.segments.forEach(segment => {
                 const r = segment.userData.radius || 0;
-                const thrust = segment.userData.thrust || 0;
+                let force;
+                
+                // Select the appropriate force based on dropdown
+                if (forceType === 'thrust') {
+                    force = segment.userData.thrust || 0;
+                } else if (forceType === 'tangential') {
+                    force = segment.userData.tangentialForce || 0;
+                } else if (forceType === 'resultant') {
+                    force = segment.userData.resultantForce || 0;
+                }
                 
                 // Calculate spanwise position as percentage
                 const spanPercent = (r / turbineParams.bladeRadius) * 100;
                 
-                dataPoints.push({ x: spanPercent, y: thrust });
+                dataPoints.push({ x: spanPercent, y: force });
+                
+                // Track min/max for dynamic scaling
+                if (force < minForce) minForce = force;
+                if (force > maxForce) maxForce = force;
             });
             
             // Update chart data
             spanwiseChart.data.datasets[0].data = dataPoints;
+            
+            // Dynamically adjust y-axis based on current data
+            // Add 10% margin for better visualization
+            const margin = (maxForce - minForce) * 0.1;
+            spanwiseChart.options.scales.y.min = minForce - margin;
+            spanwiseChart.options.scales.y.max = maxForce + margin;
+            
             spanwiseChart.update('none');
         }
         
@@ -3661,7 +4380,7 @@
             if (spanwiseChart) {
                 spanwiseChart.options.scales.y.min = minThrust;
                 spanwiseChart.options.scales.y.max = maxThrust;
-                spanwiseChart.update('none');
+            spanwiseChart.update('none');
             }
         }
         
@@ -3687,8 +4406,9 @@
             const azimuthRad = azimuth * Math.PI / 180;
             
             // Get actual pitch angle (convert from 0=disc, 90=feathered convention)
-            const actualPitchAngle = turbineParams.bladePitch - 90;
-            const totalBladeAngle = twist + actualPitchAngle; // Total rotation of blade
+            // For 3D visualization, we need to convert, but for aerodynamics, use bladePitch directly
+            const actualPitchAngle = turbineParams.bladePitch; // Use slider value directly for aerodynamics
+            const totalBladeAngle = twist + actualPitchAngle; // Total rotation of blade for aerodynamics
             const angleRad = -totalBladeAngle * Math.PI / 180; // Negative for correct direction
             
             // Calculate velocity components
@@ -3707,33 +4427,86 @@
             const V_normal = V_z;
             
             const Vt = U - V_inplane_tangential; // Tangential velocity (rotational + wind)
-            const Vn = V_normal; // Normal velocity (axial wind)
+            const Vn = V_normal * (1 - 0.3); // Normal velocity (axial wind) with induction factor
             
-            // Generate NACA 0012 airfoil profile (rotated by twist + pitch)
+            // Generate NREL-style airfoil profile (rotated by twist + pitch)
+            // Use same thickness distribution and region-specific shapes as 3D blade model
+            const spanFraction = stationPercent / 100;
+            const thickness_ratio = 0.40 * (1 - spanFraction) + 0.18 * spanFraction; // NREL-style: 40% at root, 18% at tip
+            
+            // Region-specific airfoil characteristics (matching 3D blade creation)
+            let camberAmount, leadingEdgeRadius;
+            
+            if (spanFraction < 0.3) {
+                // Root region - thick structural airfoil
+                camberAmount = 0.015;  // Less camber
+                leadingEdgeRadius = 1.2; // Blunter leading edge
+            } else if (spanFraction < 0.7) {
+                // Mid-span region - primary aerodynamic airfoil
+                camberAmount = 0.025;  // More camber for lift
+                leadingEdgeRadius = 1.0; // Standard leading edge
+            } else {
+                // Tip region - thin high-performance airfoil
+                camberAmount = 0.018;  // Moderate camber
+                leadingEdgeRadius = 0.8; // Sharper leading edge
+            }
+            
+            // DEBUG MODE: Super extra camber to verify orientation
+            if (turbineParams.debugCamber) {
+                camberAmount = 0.15;  // 15% camber - super obvious!
+            }
+            
             const airfoilPoints = [];
             const numPoints = 50;
             
             // Upper surface
             for (let i = 0; i <= numPoints; i++) {
-                const xNorm = i / numPoints; // 0 to 1
+                // Cosine spacing for better leading edge resolution
+                const t = i / numPoints;
+                const xNorm = (1 - Math.cos(t * Math.PI)) / 2; // Cosine spacing
                 const xLocal = (xNorm - 0.5) * chord; // LE on left, TE on right
-                const t = 0.12; // 12% thickness
-                const yLocal = chord * t * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * Math.pow(xNorm, 3) - 0.1015 * Math.pow(xNorm, 4));
+                
+                // NREL-style thickness distribution with region-specific leading edge radius
+                const yLocal = 5 * thickness_ratio * chord * leadingEdgeRadius * (
+                    0.2969 * Math.sqrt(xNorm) -
+                    0.1260 * xNorm -
+                    0.3516 * xNorm * xNorm +
+                    0.2843 * xNorm * xNorm * xNorm -
+                    0.1036 * xNorm * xNorm * xNorm * xNorm
+                );
+                
+                // Add region-specific camber
+                const camber = camberAmount * chord * 4 * (xNorm - xNorm * xNorm);
+                const yLocal_cambered = yLocal + camber;
+                
                 // Rotate by total blade angle
-                const x = xLocal * Math.cos(angleRad) - yLocal * Math.sin(angleRad);
-                const y = xLocal * Math.sin(angleRad) + yLocal * Math.cos(angleRad);
+                const x = xLocal * Math.cos(angleRad) - yLocal_cambered * Math.sin(angleRad);
+                const y = -(xLocal * Math.sin(angleRad) + yLocal_cambered * Math.cos(angleRad)); // Negate y
                 airfoilPoints.push({ x: x, y: y });
             }
             
             // Lower surface (reverse order)
             for (let i = numPoints; i >= 0; i--) {
-                const xNorm = i / numPoints;
-                const xLocal = (xNorm - 0.5) * chord; // LE on left, TE on right
-                const t = 0.12;
-                const yLocal = -chord * t * (0.2969 * Math.sqrt(xNorm) - 0.126 * xNorm - 0.3516 * xNorm * xNorm + 0.2843 * Math.pow(xNorm, 3) - 0.1015 * Math.pow(xNorm, 4));
+                const t = i / numPoints;
+                const xNorm = (1 - Math.cos(t * Math.PI)) / 2; // Cosine spacing
+                const xLocal = (xNorm - 0.5) * chord;
+                
+                // NREL-style thickness distribution with region-specific leading edge radius
+                const yLocal = -5 * thickness_ratio * chord * leadingEdgeRadius * (
+                    0.2969 * Math.sqrt(xNorm) -
+                    0.1260 * xNorm -
+                    0.3516 * xNorm * xNorm +
+                    0.2843 * xNorm * xNorm * xNorm -
+                    0.1036 * xNorm * xNorm * xNorm * xNorm
+                );
+                
+                // Add region-specific camber
+                const camber = camberAmount * chord * 4 * (xNorm - xNorm * xNorm);
+                const yLocal_cambered = yLocal + camber;
+                
                 // Rotate by total blade angle
-                const x = xLocal * Math.cos(angleRad) - yLocal * Math.sin(angleRad);
-                const y = xLocal * Math.sin(angleRad) + yLocal * Math.cos(angleRad);
+                const x = xLocal * Math.cos(angleRad) - yLocal_cambered * Math.sin(angleRad);
+                const y = -(xLocal * Math.sin(angleRad) + yLocal_cambered * Math.cos(angleRad)); // Negate y
                 airfoilPoints.push({ x: x, y: y });
             }
             
@@ -3760,31 +4533,43 @@
                 { x: 0, y: 0 } // Head at airfoil (fixed)
             ];
             
+            // Calculate the angle of the resultant velocity vector from its coordinates
+            // Vector goes from tail (-vn_scaled, -vt_scaled) to head (0, 0)
+            // So the direction vector is (vn_scaled, vt_scaled)
+            // phi is calculated as atan2(Vn, Vt), so we should use atan2(vn_scaled, vt_scaled)
+            const resultant_angle_from_coords = Math.atan2(vn_scaled, vt_scaled);
+            
+            // Calculate phi from the local Vn and Vt (this is the flow angle)
+            const phi = Math.atan2(Vn, Vt);
+            
+            // Calculate angle of attack: AoA = blade angle (twist + pitch) - advance angle (phi)
+            const aoa = (twist + actualPitchAngle) - (phi * 180 / Math.PI);
+            
             // Get aerodynamic forces from segment userData (already calculated in updateBladeLoads)
             const L = segment.userData.L || 0; // Lift
             const D = segment.userData.D || 0; // Drag
             const thrust = segment.userData.thrust || 0; // Thrust (axial force)
-            const phi = segment.userData.phi || 0; // Flow angle
             
             // Force vector scale (forces are much larger than velocities)
             const forceScale = 0.005; // Scale factor for visibility
             
-            // Lift vector: perpendicular to relative velocity (V_resultant), magnitude L
-            // In the blade reference frame, lift acts perpendicular to flow
-            const phi_rad = phi; // phi is already in radians
-            const lift_x = L * Math.sin(phi_rad) * forceScale;
-            const lift_y = L * Math.cos(phi_rad) * forceScale;
+            // Lift: perpendicular to incoming flow, points "up" from airfoil
+            // Flow comes from direction (Vn, Vt), lift is perpendicular (rotated 90° CCW)
+            // Perpendicular to (Vn, Vt) is (-Vt, Vn)
+            const V_mag = Math.sqrt(Vn*Vn + Vt*Vt);
+            const lift_x = -L * (Vt / V_mag) * forceScale;  // Perpendicular to flow
+            const lift_y = L * (Vn / V_mag) * forceScale;   // Perpendicular to flow
             const liftVector = [
                 { x: 0, y: 0 }, // Tail at airfoil
                 { x: lift_x, y: lift_y } // Head points perpendicular to flow
             ];
             
-            // Drag vector: parallel to relative velocity (opposite direction), magnitude D
-            const drag_x = -D * Math.cos(phi_rad) * forceScale;
-            const drag_y = -D * Math.sin(phi_rad) * forceScale;
+            // Drag: parallel to velocity (pointing away from blade, in direction of flow)
+            const drag_x = D * (Vn / V_mag) * forceScale;
+            const drag_y = D * (Vt / V_mag) * forceScale;
             const dragVector = [
                 { x: 0, y: 0 }, // Tail at airfoil
-                { x: drag_x, y: drag_y } // Head points opposite to flow
+                { x: drag_x, y: drag_y } // Head points in flow direction
             ];
             
             // Resultant force vector: vector sum of lift and drag
@@ -3801,6 +4586,65 @@
                 { x: -thrust * forceScale, y: 0 } // Head points in axial direction (normal to disc)
             ];
             
+            // Tangential force vector: F_tangent = L*sin(phi) - D*cos(phi)
+            const F_tangent = L * Math.sin(phi) - D * Math.cos(phi);
+            const tangentVector = [
+                { x: 0, y: 0 }, // Tail at origin
+                { x: 0, y: F_tangent * forceScale } // Head points in tangential direction
+            ];
+            
+            // Chord line (dashed black line through airfoil at blade angle)
+            const chordLength = chord;
+            const chordLine = [
+                { x: -chordLength/2 * Math.cos(angleRad), y: -(-chordLength/2 * Math.sin(angleRad)) },
+                { x: chordLength/2 * Math.cos(angleRad), y: -(chordLength/2 * Math.sin(angleRad)) }
+            ];
+            
+            // Phi (φ) angle arc - angle between V_tangential and V_resultant
+            // Both vectors point TO the origin from their tails
+            // V_tangential direction: straight up (from 0, -vt to 0, 0)
+            // V_resultant direction: from (-vn, -vt) to (0, 0)
+            const phiAngleArc = [];
+            const arcRadius = 0.5;
+            const numArcPoints = 20;
+            
+            // Starting angle: V_tangential points straight up (90° in chart coords)
+            const vtAngle = Math.PI / 2;
+            
+            // Ending angle: V_resultant direction
+            // Direction vector of V_resultant: (vn_scaled, vt_scaled)
+            const vresAngle = Math.atan2(vt_scaled, vn_scaled);
+            
+            phiAngleArc.push({ x: 0, y: 0 }); // Start at origin
+            for (let i = 0; i <= numArcPoints; i++) {
+                // Sweep from V_tangential to V_resultant
+                const angle = vtAngle - i / numArcPoints * (vtAngle - vresAngle);
+                const x = arcRadius * Math.cos(angle);
+                const y = arcRadius * Math.sin(angle);
+                phiAngleArc.push({ x: -x, y: -y }); // Negate both x and y for chart coordinates
+            }
+            phiAngleArc.push({ x: 0, y: 0 }); // Back to origin to close
+            
+            // AoA angle arc (from V_resultant to chord line)
+            const aoaAngleArc = [];
+            const aoaArcRadius = 0.7;
+            aoaAngleArc.push({ x: 0, y: 0 }); // Start at origin
+            
+            // V_resultant angle (same as calculated for phi arc)
+            const vresAngleForAoA = Math.atan2(vt_scaled, vn_scaled);
+            
+            // Chord line is at angle = -angleRad (because of the Y negation in drawing)
+            const chordAngle = -angleRad;
+            
+            for (let i = 0; i <= numArcPoints; i++) {
+                // Arc from resultant velocity to chord line
+                const angle = vresAngleForAoA - i / numArcPoints * (vresAngleForAoA - chordAngle);
+                const x = aoaArcRadius * Math.cos(angle);
+                const y = aoaArcRadius * Math.sin(angle);
+                aoaAngleArc.push({ x: -x, y: -y }); // Negate both x and y for chart coordinates
+            }
+            aoaAngleArc.push({ x: 0, y: 0 }); // Back to origin to close
+            
             // Update chart datasets
             sectionChart.data.datasets[0].data = airfoilPoints; // Airfoil
             sectionChart.data.datasets[1].data = vtVector; // V_tangential
@@ -3810,7 +4654,18 @@
             sectionChart.data.datasets[5].data = dragVector; // Drag
             sectionChart.data.datasets[6].data = resultantForceVector; // Resultant Force
             sectionChart.data.datasets[7].data = thrustVector; // Thrust
-            sectionChart.data.datasets[8].data = []; // Tangential Force (not used)
+            sectionChart.data.datasets[8].data = tangentVector; // Tangential Force
+            sectionChart.data.datasets[9].data = chordLine; // Chord Line
+            sectionChart.data.datasets[10].data = phiAngleArc; // Phi Angle
+            sectionChart.data.datasets[11].data = aoaAngleArc; // AoA Angle
+            
+            // Update angle displays
+            document.getElementById('twist-display').textContent = twist.toFixed(2);
+            document.getElementById('pitch-raw-display').textContent = turbineParams.bladePitch.toFixed(2);
+            document.getElementById('pitch-display').textContent = actualPitchAngle.toFixed(2);
+            document.getElementById('total-twist-display').textContent = totalBladeAngle.toFixed(2);
+            document.getElementById('phi-display').textContent = (phi * 180 / Math.PI).toFixed(2);
+            document.getElementById('aoa-display').textContent = aoa.toFixed(2);
             
             sectionChart.update('none');
         }
@@ -3859,9 +4714,13 @@
         
         // Helper function to calculate thrust at a given azimuth
         function calculateThrustAtAzimuth(azimuth, r, chord, omega, windSpeedAxial, windSpeedTangential, inflowRadians) {
-            // Blade twist distribution (typical for wind turbine)
+            // Blade twist distribution (optimal for constant AoA)
+            // Varies inversely with radius to maintain constant flow angle
             const r_norm = (r - turbineParams.hubRadius) / (turbineParams.bladeRadius - turbineParams.hubRadius);
-            const twist = 14 * (1 - r_norm); // Linear twist from 14° at root to 0° at tip
+            const r_root = turbineParams.hubRadius;
+            const r_tip = turbineParams.bladeRadius;
+            const twist_weight = (r_tip / r - 1) / (r_tip / r_root - 1);
+            const twist = turbineParams.twistRoot * twist_weight + turbineParams.twistTip * (1 - twist_weight);
             
             // Velocities in rotor disc coordinates
             // Use proper coordinate transformation
@@ -3880,23 +4739,30 @@
             const Vt = omega * r + V_inplane_tangential;
             
             // Normal velocity (axial wind + induction)
-            const Vn = -V_z * (1 - 0.3);
+            const Vn = V_z * (1 - 0.3); // With induction factor - should be positive
             
             // Flow angle and angle of attack
             const phi = Math.atan2(Vn, Vt);
-            // Convert bladePitch from new convention (0=disc, 90=feathered) to actual angle
-            const actualPitchAngle = turbineParams.bladePitch - 90;
+            // Use bladePitch directly for aerodynamics (slider value is the aerodynamic angle)
+            const aeroPitchAngle = turbineParams.bladePitch;
             // AoA = blade angle (twist + pitch) - advance angle (phi)
-            const aoa = (twist + actualPitchAngle) - (phi * 180 / Math.PI);
+            const aoa = (twist + aeroPitchAngle) - (phi * 180 / Math.PI);
             
             // Dynamic pressure
             const V_total = Math.sqrt(Vt * Vt + Vn * Vn);
             const q = 0.5 * 1.225 * V_total * V_total * chord * (turbineParams.bladeRadius / 100);
             
-            // Simple aerodynamic model
-            const Cl = 2 * Math.PI * Math.sin(aoa * Math.PI / 180);
+            // Realistic aerodynamic model with stall
+            // Get thickness ratio for this span location
+            const spanFrac = (r - turbineParams.hubRadius) / (turbineParams.bladeRadius - turbineParams.hubRadius);
+            const thickness_ratio = 0.40 * (1 - spanFrac) + 0.18 * spanFrac;
+            
+            // Get lift and drag coefficients
+            const Cl = getLiftCoefficient(aoa, thickness_ratio);
+            const Cd = getDragCoefficient(aoa, thickness_ratio);
+            
             const L = q * Cl;
-            const D = 0.05 * Math.abs(L);
+            const D = q * Cd;
             
             // Thrust (axial force)
             const thrust = L * Math.cos(phi) + D * Math.sin(phi);
@@ -4067,6 +4933,157 @@
             }
         });
         
+        // Add global event listeners to all control inputs to save state when changed
+        const allControlInputs = document.querySelectorAll('#control-panel input[type="range"], #control-panel input[type="checkbox"], #control-panel select');
+        allControlInputs.forEach(input => {
+            input.addEventListener('input', () => debouncedSaveState());
+            input.addEventListener('change', () => debouncedSaveState());
+        });
+        
+        // URL State Management - save/restore parameters
+        function saveStateToURL() {
+            const params = new URLSearchParams();
+            
+            // Save main parameters
+            params.set('windSpeed', turbineParams.windSpeed);
+            params.set('shaftSpeed', turbineParams.shaftSpeed);
+            params.set('bladePitch', turbineParams.bladePitch);
+            params.set('twistRoot', turbineParams.twistRoot);
+            params.set('twistTip', turbineParams.twistTip);
+            params.set('numBlades', turbineParams.numBlades);
+            params.set('yawAngle', turbineParams.yawAngle);
+            params.set('inflowAngle', turbineParams.inflowAngle);
+            params.set('radialStation', turbineParams.radialStation);
+            params.set('angularResolution', turbineParams.angularResolution);
+            
+            // Save boolean flags
+            if (turbineParams.showVectors) params.set('showVectors', '1');
+            if (turbineParams.showHeatmap) params.set('showHeatmap', '1');
+            if (turbineParams.debugCamber) params.set('debugCamber', '1');
+            if (turbineParams.showWindVector) params.set('showWindVector', '1');
+            if (turbineParams.paused) params.set('paused', '1');
+            if (turbineParams.dynamicSpeed) params.set('dynamicSpeed', '1');
+            if (turbineParams.windFarmMode) params.set('windFarmMode', '1');
+            if (turbineParams.removeMean) params.set('removeMean', '1');
+            
+            // Update URL without reloading
+            const newURL = window.location.pathname + '?' + params.toString();
+            window.history.replaceState({}, '', newURL);
+        }
+        
+        function loadStateFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            
+            // Load numeric parameters
+            if (params.has('windSpeed')) {
+                turbineParams.windSpeed = parseFloat(params.get('windSpeed'));
+                document.getElementById('wind-speed').value = turbineParams.windSpeed;
+                document.getElementById('wind-speed-value').textContent = turbineParams.windSpeed.toFixed(1);
+            }
+            if (params.has('shaftSpeed')) {
+                turbineParams.shaftSpeed = parseFloat(params.get('shaftSpeed'));
+                document.getElementById('shaft-speed').value = turbineParams.shaftSpeed;
+                document.getElementById('shaft-speed-value').textContent = turbineParams.shaftSpeed.toFixed(1);
+                turbineParams.angularVelocity = turbineParams.shaftSpeed * 2 * Math.PI / 60;
+            }
+            if (params.has('bladePitch')) {
+                turbineParams.bladePitch = parseFloat(params.get('bladePitch'));
+                document.getElementById('blade-pitch').value = turbineParams.bladePitch;
+                document.getElementById('blade-pitch-value').textContent = turbineParams.bladePitch.toFixed(1);
+            }
+            if (params.has('twistRoot')) {
+                turbineParams.twistRoot = parseFloat(params.get('twistRoot'));
+            }
+            if (params.has('twistTip')) {
+                turbineParams.twistTip = parseFloat(params.get('twistTip'));
+            }
+            if (params.has('numBlades')) {
+                turbineParams.numBlades = parseInt(params.get('numBlades'));
+                document.getElementById('num-blades').value = turbineParams.numBlades;
+                document.getElementById('num-blades-value').textContent = turbineParams.numBlades;
+            }
+            if (params.has('yawAngle')) {
+                turbineParams.yawAngle = parseFloat(params.get('yawAngle'));
+                document.getElementById('yaw').value = turbineParams.yawAngle;
+                document.getElementById('yaw-value').textContent = turbineParams.yawAngle.toFixed(1);
+            }
+            if (params.has('inflowAngle')) {
+                turbineParams.inflowAngle = parseFloat(params.get('inflowAngle'));
+                document.getElementById('inflow').value = turbineParams.inflowAngle;
+                document.getElementById('inflow-value').textContent = turbineParams.inflowAngle.toFixed(1);
+            }
+            if (params.has('radialStation')) {
+                turbineParams.radialStation = parseFloat(params.get('radialStation'));
+                const stationPercent = turbineParams.radialStation * 100;
+                document.getElementById('station').value = stationPercent;
+                document.getElementById('station-value').textContent = stationPercent.toFixed(0);
+            }
+            if (params.has('angularResolution')) {
+                turbineParams.angularResolution = parseFloat(params.get('angularResolution'));
+                document.getElementById('angular-resolution').value = turbineParams.angularResolution;
+                document.getElementById('angular-res-value').textContent = turbineParams.angularResolution.toFixed(2);
+            }
+            
+            // Load boolean flags
+            if (params.has('showVectors')) {
+                turbineParams.showVectors = true;
+                document.getElementById('show-vectors').checked = true;
+            }
+            if (params.has('showHeatmap')) {
+                turbineParams.showHeatmap = true;
+                document.getElementById('show-heatmap').checked = true;
+            }
+            if (params.has('debugCamber')) {
+                turbineParams.debugCamber = true;
+                document.getElementById('debug-camber').checked = true;
+            }
+            if (params.has('showWindVector')) {
+                turbineParams.showWindVector = true;
+                document.getElementById('show-wind-vector').checked = true;
+            }
+            if (params.has('paused')) {
+                turbineParams.paused = true;
+                document.getElementById('pause-rotation').checked = true;
+            }
+            if (params.has('dynamicSpeed')) {
+                turbineParams.dynamicSpeed = true;
+                document.getElementById('dynamic-speed').checked = true;
+            }
+            if (params.has('windFarmMode')) {
+                turbineParams.windFarmMode = true;
+                document.getElementById('wind-farm-mode').checked = true;
+            }
+            if (params.has('removeMean')) {
+                turbineParams.removeMean = true;
+                document.getElementById('remove-mean').checked = true;
+            }
+            
+            // Rebuild if blade count or camber changed
+            if (params.has('numBlades') || params.has('debugCamber')) {
+                updateBladeCount();
+            }
+            
+            // Update wind arrow if needed
+            if (params.has('windSpeed') || params.has('yawAngle') || params.has('inflowAngle')) {
+                createWindVectorArrow();
+            }
+            
+            // Update wind farm if needed
+            if (params.has('windFarmMode')) {
+                createWindFarm();
+            }
+        }
+        
+        // Load state from URL on page load
+        loadStateFromURL();
+        
+        // Debounced save function to avoid excessive URL updates
+        let saveTimeout;
+        function debouncedSaveState() {
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(saveStateToURL, 500);
+        }
+        
         // Animation loop
         let lastFrameTime = 0;
         const targetFrameTime = 1000 / 60; // 60 FPS target
@@ -4085,6 +5102,11 @@
             // Increment frame counter
             frameCount++;
             
+            // Update rotor dynamics if in d mode
+            // dt is time step in seconds (assuming 60 fps target)
+            const dt = targetFrameTime / 1000; // Convert ms to seconds
+            updateRotorDynamics(dt);
+            
             // Update blade loads BEFORE rotating (so loads match current position)
             updateBladeLoads();
             
@@ -4093,14 +5115,14 @@
                 // Apply speed multiplier during fast Fourier collection
                 const speedMultiplier = (fourierData.collecting && fourierData.fastMode) ? fourierData.speedMultiplier : 1;
                 const deltaRotation = (turbineParams.shaftSpeed * 2 * Math.PI) / (60 * 60) * speedMultiplier; // per frame at 60fps
-                rotorGroup.rotation.x += deltaRotation;
+                rotorGroup.rotation.x -= deltaRotation;  // Negative for counter-clockwise rotation when viewed from front
                 
                 // Rotate wind farm turbines with speed variation
                 additionalTurbines.forEach(turbine => {
                     const rotorGrp = turbine.userData.rotorGroup;
                     const speedMult = turbine.userData.speedMultiplier;
                     if (rotorGrp) {
-                        rotorGrp.rotation.x += deltaRotation * speedMult * speedMultiplier;
+                        rotorGrp.rotation.x -= deltaRotation * speedMult * speedMultiplier;  // Match main rotor direction
                     }
                 });
             }
@@ -4180,6 +5202,5 @@
         
         animate();
     </script>
-
 
 </body></html>
