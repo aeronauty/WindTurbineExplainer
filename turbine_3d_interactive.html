@@ -470,6 +470,13 @@
             
             <div class="control-group">
                 <label>
+                    <input type="checkbox" id="simple-aero"> Simple Aerodynamics
+                </label>
+                <div class="info-text">Linear lift model: CL = 0.05 + 5.7*AoA, CD = 0.1*CL</div>
+            </div>
+            
+            <div class="control-group">
+                <label>
                     <input type="checkbox" id="show-wind-vector" checked> Show Wind Vector
                 </label>
                 <div class="info-text">Display incoming wind direction arrow</div>
@@ -778,6 +785,7 @@
             showHeatmap: true,   // Show load heatmap on blades
             debugCamber: false,  // Debug mode: super extra camber
             showWindVector: true, // Show wind vector arrow
+            simpleAero: false,   // Simple aerodynamics mode (linear CL)
             angularResolution: 1.0,  // Angular resolution in degrees (0.333 to 15)
             paused: false,       // Pause rotation
             manualRotation: 0,   // Manual rotation angle in degrees
@@ -1197,17 +1205,30 @@
             const percent = turbineParams.radialStation;
             const radius = percent * turbineParams.bladeRadius;
             
-            // Create a circular disc
-            const planeGeometry = new THREE.RingGeometry(radius - 0.5, radius + 0.5, 64);
+            // Create a rectangular cutting plane that cuts through the blade
+            // The plane should be perpendicular to the blade span (Y-axis)
+            const planeSize = 6; // Square plane
+            const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize);
             const planeMaterial = new THREE.MeshBasicMaterial({
                 color: 0xffff00,
                 side: THREE.DoubleSide,
                 transparent: true,
-                opacity: 0.6
+                opacity: 0.3,
+                depthWrite: false
             });
             
             sectionPlane = new THREE.Mesh(planeGeometry, planeMaterial);
-            sectionPlane.rotation.x = Math.PI / 2; // Rotate to be perpendicular to blade
+            
+            // Position the plane at the radial station
+            // Blade extends along Y-axis, so plane position.y = radius
+            sectionPlane.position.x = 0;
+            sectionPlane.position.y = radius;
+            sectionPlane.position.z = 0;
+            
+            // Rotate plane 90° around X-axis so it's perpendicular to the blade span (Y-axis)
+            // This makes it cut through the blade cross-section
+            sectionPlane.rotation.x = Math.PI / 2;
+            
             rotorGroup.add(sectionPlane);
         }
         
@@ -1230,6 +1251,13 @@
         // Based on NREL airfoil data with stall behavior
         function getLiftCoefficient(aoa_deg, thickness_ratio) {
             const aoa = aoa_deg; // AoA in degrees
+            
+            // Simple aerodynamics mode: Linear lift model
+            if (turbineParams.simpleAero) {
+                const CL0 = 0.05;
+                const Cl = CL0 + 5.7 * (aoa * Math.PI / 180); // AoA must be in radians
+                return Cl;
+            }
             
             // Different airfoil families have different characteristics
             let Cl_alpha, aoa_stall, Cl_max, Cl_min;
@@ -1285,8 +1313,17 @@
         }
         
         // Realistic drag coefficient function for wind turbine airfoils
-        function getDragCoefficient(aoa_deg, thickness_ratio) {
+        function getDragCoefficient(aoa_deg, thickness_ratio, Cl = null) {
             const aoa = aoa_deg; // AoA in degrees
+            
+            // Simple aerodynamics mode: CD = 0.1 * CL
+            if (turbineParams.simpleAero) {
+                // If Cl is provided, use it; otherwise calculate it
+                if (Cl === null) {
+                    Cl = getLiftCoefficient(aoa_deg, thickness_ratio);
+                }
+                return 0.1 * Cl;
+            }
             
             // Minimum drag varies with thickness
             let Cd_min, aoa_minD;
@@ -1730,7 +1767,7 @@
                     
                     // Get lift and drag coefficients
                     const Cl = getLiftCoefficient(aoa, thickness_ratio);
-                    const Cd = getDragCoefficient(aoa, thickness_ratio);
+                    const Cd = getDragCoefficient(aoa, thickness_ratio, Cl);
                     
                     const L = q * Cl;
                     const D = q * Cd;
@@ -2839,7 +2876,7 @@
             let thrustHtml = '';
             
             // Blade 1 Thrust
-            thrustHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Thrust</h5>';
+            thrustHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Thrust (rotating/blade frame)</h5>';
             thrustHtml += createFourierEquation('T', blade1ThrustFourier);
             thrustHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             thrustHtml += '<thead><tr style="background: #ddd;">';
@@ -2857,7 +2894,7 @@
             thrustHtml += '</tbody></table>';
             
             // Total Rotor Thrust
-            thrustHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor Thrust</h5>';
+            thrustHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor Thrust (non-rotating frame)</h5>';
             thrustHtml += createFourierEquation('T_total', totalThrustFourier);
             thrustHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             thrustHtml += '<thead><tr style="background: #ddd;">';
@@ -2878,7 +2915,7 @@
             let momentYHtml = '';
             
             // Blade 1 Yawing Moment
-            momentYHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 M_y (Yawing)</h5>';
+            momentYHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 M_y (Yawing) (rotating/blade frame)</h5>';
             momentYHtml += createFourierEquation('M_y', blade1MomentYFourier);
             momentYHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             momentYHtml += '<thead><tr style="background: #ddd;">';
@@ -2896,7 +2933,7 @@
             momentYHtml += '</tbody></table>';
             
             // Total Rotor Yawing Moment
-            momentYHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_y (Yawing)</h5>';
+            momentYHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_y (Yawing) (non-rotating frame)</h5>';
             momentYHtml += createFourierEquation('M_y,total', totalMomentYFourier);
             momentYHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             momentYHtml += '<thead><tr style="background: #ddd;">';
@@ -2917,7 +2954,7 @@
             let momentZHtml = '';
             
             // Blade 1 Nodding Moment
-            momentZHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 M_z (Nodding)</h5>';
+            momentZHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 M_z (Nodding) (rotating/blade frame)</h5>';
             momentZHtml += createFourierEquation('M_z', blade1MomentZFourier);
             momentZHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             momentZHtml += '<thead><tr style="background: #ddd;">';
@@ -2935,7 +2972,7 @@
             momentZHtml += '</tbody></table>';
             
             // Total Rotor Nodding Moment
-            momentZHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_z (Nodding)</h5>';
+            momentZHtml += '<h5 style="margin: 15px 0 5px 0; font-size: 0.95em;">Total Rotor M_z (Nodding) (non-rotating frame)</h5>';
             momentZHtml += createFourierEquation('M_z,total', totalMomentZFourier);
             momentZHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             momentZHtml += '<thead><tr style="background: #ddd;">';
@@ -2962,7 +2999,7 @@
             const blade1AoAWithPercent = calculatePercent(blade1AoAFourier);
             
             let aoaHtml = '';
-            aoaHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Angle of Attack</h5>';
+            aoaHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Angle of Attack (rotating/blade frame)</h5>';
             aoaHtml += createFourierEquation('AoA', blade1AoAFourier);
             aoaHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             aoaHtml += '<thead><tr style="background: #ddd;">';
@@ -2986,7 +3023,7 @@
             const blade1VelocityWithPercent = calculatePercent(blade1VelocityFourier);
             
             let velocityHtml = '';
-            velocityHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Total Velocity</h5>';
+            velocityHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Total Velocity (rotating/blade frame)</h5>';
             velocityHtml += createFourierEquation('V', blade1VelocityFourier);
             velocityHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
             velocityHtml += '<thead><tr style="background: #ddd;">';
@@ -3238,7 +3275,7 @@
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Blade Thrust'
+                        text: 'Blade Thrust (non-rotating frame)'
                     },
                     legend: {
                         display: true,
@@ -3282,7 +3319,7 @@
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Nodding Moment (My)'
+                        text: 'Nodding Moment (My) (non-rotating frame)'
                     },
                     legend: {
                         display: true,
@@ -3326,7 +3363,7 @@
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Yawing Moment (Mz)'
+                        text: 'Yawing Moment (Mz) (non-rotating frame)'
                     },
                     legend: {
                         display: true,
@@ -3371,7 +3408,7 @@
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Angle of Attack (degrees)'
+                        text: 'Angle of Attack (degrees) (rotating frame)'
                     },
                     legend: {
                         display: true,
@@ -3416,7 +3453,7 @@
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Total Velocity (m/s)'
+                        text: 'Total Velocity (m/s) (rotating frame)'
                     },
                     legend: {
                         display: true,
@@ -3856,6 +3893,11 @@
             updateBladeCount();
         });
         
+        document.getElementById('simple-aero').addEventListener('change', (e) => {
+            turbineParams.simpleAero = e.target.checked;
+            // No need to rebuild blades, aerodynamics will update automatically
+        });
+        
         document.getElementById('show-wind-vector').addEventListener('change', (e) => {
             turbineParams.showWindVector = e.target.checked;
             createWindVectorArrow(); // Update visibility
@@ -3910,6 +3952,10 @@
             // Sync to section analysis slider
             document.getElementById('section-radial-station').value = percent;
             document.getElementById('section-station-value').textContent = percent;
+            // Update section plane if visible
+            if (document.getElementById('show-section-plane').checked) {
+                createSectionPlane();
+            }
             // Reset plot data when station changes
             initPlotData();
             rebuildCharts();
@@ -4759,7 +4805,7 @@
             
             // Get lift and drag coefficients
             const Cl = getLiftCoefficient(aoa, thickness_ratio);
-            const Cd = getDragCoefficient(aoa, thickness_ratio);
+            const Cd = getDragCoefficient(aoa, thickness_ratio, Cl);
             
             const L = q * Cl;
             const D = q * Cd;
@@ -5015,7 +5061,7 @@
             if (params.has('radialStation')) {
                 turbineParams.radialStation = parseFloat(params.get('radialStation'));
                 const stationPercent = turbineParams.radialStation * 100;
-                document.getElementById('station').value = stationPercent;
+                document.getElementById('radial-station').value = stationPercent;
                 document.getElementById('station-value').textContent = stationPercent.toFixed(0);
             }
             if (params.has('angularResolution')) {
