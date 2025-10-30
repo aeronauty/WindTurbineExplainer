@@ -178,7 +178,7 @@
             width: 800px;
             height: 600px;
             resize: both;
-            overflow: hidden;
+            overflow: scroll;
             display: flex;
             flex-direction: column;
         }
@@ -194,6 +194,7 @@
             padding: 15px;
             overflow: auto;
             flex: 1;
+            min-height: 0;
         }
         #total-loads-panel {
             position: absolute;
@@ -207,7 +208,7 @@
             height: 500px;
             z-index: 100;
             resize: both;
-            overflow: hidden;
+            overflow: scroll;
             display: flex;
             flex-direction: column;
         }
@@ -223,6 +224,7 @@
             height: auto !important;
             resize: none;
             width: auto !important;
+            overflow: hidden !important;
         }
         #total-loads-panel.minimized #total-loads-content {
             display: none;
@@ -236,6 +238,7 @@
             padding: 15px;
             overflow: auto;
             flex: 1;
+            min-height: 0;
         }
         #spanwise-panel {
             position: absolute;
@@ -250,7 +253,7 @@
             width: 600px;
             height: 700px;
             resize: both;
-            overflow: hidden;
+            overflow: scroll;
             display: flex;
             flex-direction: column;
         }
@@ -284,6 +287,7 @@
             padding: 15px;
             overflow: auto;
             flex: 1;
+            min-height: 0;
         }
         #plot-panel.minimized {
             width: auto !important;
@@ -714,7 +718,6 @@
                 <button class="trace-tab-btn" data-tab="aoa">Angle of Attack</button>
                 <button class="trace-tab-btn" data-tab="velocity">Total Velocity</button>
                 <button class="trace-tab-btn" data-tab="lift">Lift</button>
-                <button class="trace-tab-btn" data-tab="tangential-velocity">Tangential Velocity</button>
                 <button class="trace-tab-btn" data-tab="debug">Debug</button>
             </div>
             
@@ -786,18 +789,6 @@
                     <div class="fourier-summary">
                         <h4 style="margin-top: 0; font-size: 1em;">Lift Harmonics</h4>
                         <div id="fourier-lift-content"></div>
-                    </div>
-                </div>
-            </div>
-            
-            <div id="tangential-velocity-tab" class="trace-tab-content">
-                <div class="chart-with-fourier">
-                    <div class="chart-container">
-                        <canvas id="tangential-velocity-chart"></canvas>
-                    </div>
-                    <div class="fourier-summary">
-                        <h4 style="margin-top: 0; font-size: 1em;">Tangential Velocity Harmonics</h4>
-                        <div id="fourier-tangential-velocity-content"></div>
                     </div>
                 </div>
             </div>
@@ -3125,6 +3116,8 @@
                         fourierData.bladeMomentZ.push(bladeMomentsZ[0]);
                         fourierData.bladeAoA.push(bladeAoAs[0]);
                         fourierData.bladeVelocity.push(bladeVelocities[0]);
+                        fourierData.bladeLiftForce.push(bladeLiftForces[0]);
+                        fourierData.bladeTangentialVelocity.push(bladeTangentialVelocities[0]);
                         fourierData.totalLift.push(totalLift);
                         fourierData.totalMomentY.push(turbineParams.currentTotalMomentY || 0);  // Use full rotor moment Y
                         fourierData.totalMomentZ.push(turbineParams.currentTotalMomentZ || 0);  // Use full rotor moment Z
@@ -3403,17 +3396,6 @@
             liftForceChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
             liftForceChart.update('none');
             
-            // Update Tangential Velocity chart (no total)
-            tangentialVelocityChart.data.labels = plotData.time;
-            tangentialVelocityChart.options.scales.x.min = xMin;
-            tangentialVelocityChart.options.scales.x.max = xMax;
-            for (let i = 0; i < turbineParams.numBlades; i++) {
-                if (tangentialVelocityChart.data.datasets[i] && plotData.bladeTangentialVelocity[i]) {
-                    tangentialVelocityChart.data.datasets[i].data = plotData.bladeTangentialVelocity[i];
-                }
-            }
-            tangentialVelocityChart.currentAzimuth = turbineParams.paused ? normalizedCurrentAzimuth : null;
-            tangentialVelocityChart.update('none');
             
             // Update Fourier analysis if we have enough data
             updateFourierDisplay();
@@ -3427,10 +3409,9 @@
             const aoaContent = document.getElementById('fourier-aoa-content');
             const velocityContent = document.getElementById('fourier-velocity-content');
             const liftContent = document.getElementById('fourier-lift-content');
-            const tangentialVelocityContent = document.getElementById('fourier-tangential-velocity-content');
             
             // Check if elements exist (they might not if we're still loading)
-            if (!thrustContent || !momentYContent || !momentZContent || !aoaContent || !velocityContent || !liftContent || !tangentialVelocityContent) return;
+            if (!thrustContent || !momentYContent || !momentZContent || !aoaContent || !velocityContent || !liftContent) return;
             
             // Check collection status
             if (fourierData.collecting) {
@@ -3449,7 +3430,6 @@
                     aoaContent.innerHTML = statusMsg;
                     velocityContent.innerHTML = statusMsg;
                     liftContent.innerHTML = statusMsg;
-                    tangentialVelocityContent.innerHTML = statusMsg;
                 return;
                 }
             }
@@ -3462,7 +3442,6 @@
                 aoaContent.innerHTML = waitMsg;
                 velocityContent.innerHTML = waitMsg;
                 liftContent.innerHTML = waitMsg;
-                tangentialVelocityContent.innerHTML = waitMsg;
                 return;
             }
             
@@ -3718,30 +3697,6 @@
             liftHtml += '</tbody></table>';
             liftContent.innerHTML = liftHtml;
             
-            // === TANGENTIAL VELOCITY TAB === (Blade data only, no total)
-            const blade1TangentialVelocity = fourierData.bladeTangentialVelocity;
-            const blade1TangentialVelocityFourier = analyzeFourier(blade1TangentialVelocity, maxHarmonic);
-            const blade1TangentialVelocityWithPercent = calculatePercent(blade1TangentialVelocityFourier);
-            
-            let tangentialVelocityHtml = '';
-            tangentialVelocityHtml += '<h5 style="margin: 10px 0 5px 0; font-size: 0.95em;">Blade 1 Tangential Velocity (rotating/blade frame)</h5>';
-            tangentialVelocityHtml += createFourierEquation('Vt', blade1TangentialVelocityFourier);
-            tangentialVelocityHtml += '<table style="width: 100%; font-size: 0.8em; border-collapse: collapse;">';
-            tangentialVelocityHtml += '<thead><tr style="background: #ddd;">';
-            tangentialVelocityHtml += '<th style="padding: 3px; text-align: center;">nP</th>';
-            tangentialVelocityHtml += '<th style="padding: 3px; text-align: right;">Amp (m/s)</th>';
-            tangentialVelocityHtml += '<th style="padding: 3px; text-align: right;">%</th>';
-            tangentialVelocityHtml += '</tr></thead><tbody>';
-            blade1TangentialVelocityWithPercent.forEach((h, idx) => {
-                tangentialVelocityHtml += `<tr style="background: ${idx % 2 === 0 ? '#f9f9f9' : '#fff'};">`;
-                tangentialVelocityHtml += `<td style="padding: 3px; text-align: center;">${h.harmonic}P</td>`;
-                tangentialVelocityHtml += `<td style="padding: 3px; text-align: right;">${h.amplitude.toFixed(2)}</td>`;
-                tangentialVelocityHtml += `<td style="padding: 3px; text-align: right;">${h.percent.toFixed(1)}%</td>`;
-                tangentialVelocityHtml += '</tr>';
-            });
-            tangentialVelocityHtml += '</tbody></table>';
-            tangentialVelocityContent.innerHTML = tangentialVelocityHtml;
-            
             // === TOTAL LOADS FOURIER ANALYSIS ===
             const totalThrustContent = document.getElementById('fourier-total-thrust-content');
             const totalTorqueContent = document.getElementById('fourier-total-torque-content');
@@ -3860,10 +3815,6 @@
             liftForceChart.data.labels = [];
             liftForceChart.update('reset');
             
-            // Completely rebuild Tangential Velocity chart
-            tangentialVelocityChart.data.datasets = chartDatasets.tangentialVelocityDatasets;
-            tangentialVelocityChart.data.labels = [];
-            tangentialVelocityChart.update('reset');
             
             // Rebuild Total Load charts (only if they exist)
             try {
@@ -3906,7 +3857,6 @@
             const aoaDatasets = [];
             const velocityDatasets = [];
             const liftForceDatasets = [];
-            const tangentialVelocityDatasets = [];
             
             // Individual blade datasets
             for (let i = 0; i < turbineParams.numBlades; i++) {
@@ -3963,15 +3913,6 @@
                     borderWidth: 1,
                     pointRadius: 0
                 });
-                
-                tangentialVelocityDatasets.push({
-                    label: `Blade ${i + 1} Vt`,
-                    data: [],
-                    borderColor: colors[i % colors.length],
-                    backgroundColor: colors[i % colors.length],
-                    borderWidth: 1,
-                    pointRadius: 0
-                });
             }
             
             // Total datasets
@@ -4002,7 +3943,7 @@
                 pointRadius: 0
             });
             
-            return { liftDatasets, momentYDatasets, momentZDatasets, aoaDatasets, velocityDatasets, liftForceDatasets, tangentialVelocityDatasets };
+            return { liftDatasets, momentYDatasets, momentZDatasets, aoaDatasets, velocityDatasets, liftForceDatasets };
         }
         
         // Initialize charts
@@ -4374,51 +4315,6 @@
             plugins: [currentPositionPlugin, tdcMarkerPlugin]
         });
         
-        // Tangential Velocity chart (no total, just individual blades)
-        const tangentialVelocityChartCtx = document.getElementById('tangential-velocity-chart').getContext('2d');
-        let tangentialVelocityChart = new Chart(tangentialVelocityChartCtx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: chartDatasets.tangentialVelocityDatasets
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Tangential Velocity (m/s) (rotating frame)'
-                    },
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    },
-                    zoom: yAxisZoomConfig
-                },
-                scales: {
-                    x: {
-                        display: true,
-                        type: 'linear',
-                        title: {
-                            display: true,
-                            text: 'Time (rad)'
-                        },
-                        ticks: {
-                            display: false  // Hide tick numbers
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Vt (m/s)'
-                        }
-                    }
-                }
-            },
-            plugins: [currentPositionPlugin, tdcMarkerPlugin]
-        });
         
         // Spanwise loading chart - empty scatter plot
         const spanwiseChartCanvas = document.getElementById('spanwise-chart');
@@ -6127,8 +6023,8 @@
             
             const chord = segment.userData.chord || 1;
             const twist = segment.userData.twist || 0;
-            const azimuth = (rotorGroup.rotation.x * 180 / Math.PI) % 360;
-            const azimuthRad = azimuth * Math.PI / 180;
+            const azimuth = (-rotorGroup.rotation.x * 180 / Math.PI) % 360;
+            const azimuthRad = -rotorGroup.rotation.x;  // Use radians directly, negated for correct direction
             
             // Get actual pitch angle (convert from 0=disc, 90=feathered convention)
             // For 3D visualization, we need to convert, but for aerodynamics, use bladePitch directly
@@ -6151,7 +6047,7 @@
             const V_inplane_tangential = V_x * Math.cos(azimuthRad) - V_y * Math.sin(azimuthRad);
             const V_normal = V_z;
             
-            const Vt = U - V_inplane_tangential; // Tangential velocity (rotational + wind)
+            const Vt = U + V_inplane_tangential; // Tangential velocity (rotational + wind)
             const Vn = V_normal * (1 - 0.3); // Normal velocity (axial wind) with induction factor
             
             // Generate NREL-style airfoil profile (rotated by twist + pitch)
