@@ -23,15 +23,35 @@
             top: 20px;
             left: 20px;
             background: rgba(255, 255, 255, 0.95);
-            padding: 20px;
+            padding: 0;
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             max-width: 350px;
             max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        #controls-panel .panel-header {
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px 12px 0 0;
+            flex-shrink: 0;
+        }
+        #controls-panel #controls-content {
+            padding: 0 20px 20px 20px;
             overflow-y: auto;
+            flex: 1;
+        }
+        #controls-panel.minimized {
+            max-height: none;
+            height: auto !important;
         }
         #controls-panel.minimized #controls-content {
             display: none;
+        }
+        #controls-panel.minimized .panel-header {
+            padding-bottom: 20px;
         }
         .panel-header {
             display: flex;
@@ -150,7 +170,7 @@
             top: calc(100vh - 640px);
             left: 20px;
             background: rgba(255, 255, 255, 0.95);
-            padding: 15px;
+            padding: 0;
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             max-width: 90vw;
@@ -158,7 +178,22 @@
             width: 800px;
             height: 600px;
             resize: both;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        #plot-panel .plot-header {
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px 12px 0 0;
+            cursor: move;
+            user-select: none;
+            flex-shrink: 0;
+        }
+        #plot-panel #plot-content {
+            padding: 15px;
             overflow: auto;
+            flex: 1;
         }
         #total-loads-panel {
             position: absolute;
@@ -173,29 +208,41 @@
             z-index: 100;
             resize: both;
             overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
         #total-loads-panel .plot-header {
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px 12px 0 0;
             cursor: move;
             user-select: none;
+            flex-shrink: 0;
         }
         #total-loads-panel.minimized {
-            height: auto;
+            height: auto !important;
             resize: none;
+            width: auto !important;
         }
         #total-loads-panel.minimized #total-loads-content {
             display: none;
         }
+        #total-loads-panel.minimized .plot-header {
+            margin-bottom: 0;
+            padding-bottom: 15px;
+            border-bottom: none;
+        }
         #total-loads-panel #total-loads-content {
             padding: 15px;
             overflow: auto;
-            height: calc(100% - 50px);
+            flex: 1;
         }
         #spanwise-panel {
             position: absolute;
             top: 120px;
             left: calc(100vw - 620px);
             background: rgba(255, 255, 255, 0.95);
-            padding: 15px;
+            padding: 0;
             border-radius: 12px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             max-width: 90vw;
@@ -203,7 +250,17 @@
             width: 600px;
             height: 700px;
             resize: both;
-            overflow: auto;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        #spanwise-panel .plot-header {
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px 12px 0 0;
+            cursor: move;
+            user-select: none;
+            flex-shrink: 0;
         }
         #spanwise-panel.minimized {
             width: auto !important;
@@ -217,6 +274,16 @@
             display: none;
             height: 0 !important;
             overflow: hidden !important;
+        }
+        #spanwise-panel.minimized .plot-header {
+            margin-bottom: 0;
+            padding-bottom: 15px;
+            border-bottom: none;
+        }
+        #spanwise-panel #spanwise-content {
+            padding: 15px;
+            overflow: auto;
+            flex: 1;
         }
         #plot-panel.minimized {
             width: auto !important;
@@ -236,7 +303,7 @@
         }
         #plot-panel.minimized .plot-header {
             margin-bottom: 0;
-            padding-bottom: 0;
+            padding-bottom: 15px;
             border-bottom: none;
         }
         .plot-header {
@@ -621,11 +688,11 @@
                     </div>
                 </div>
             </div>
-        </div>
-        
-        <!-- Blade Position Display -->
-        <div style="background: #f0f0f0; padding: 10px; margin: 10px; border-radius: 5px; font-family: monospace; text-align: center;">
-            <strong>Blade 1 Position (ψ):</strong> <span id="blade-azimuth-display" style="color: #667eea; font-weight: bold;">0.0°</span>
+            
+            <!-- Blade Position Display -->
+            <div style="background: #f0f0f0; padding: 10px; margin: 10px; border-radius: 5px; font-family: monospace; text-align: center;">
+                <strong>Blade 1 Position (ψ):</strong> <span id="blade-azimuth-display" style="color: #667eea; font-weight: bold;">0.0°</span>
+            </div>
         </div>
     </div>
     
@@ -4849,7 +4916,21 @@
         
         minimizeTotalLoadsBtn.addEventListener('click', () => {
             totalLoadsPanel.classList.toggle('minimized');
-            minimizeTotalLoadsBtn.textContent = totalLoadsPanel.classList.contains('minimized') ? '+' : '−';
+            
+            if (totalLoadsPanel.classList.contains('minimized')) {
+                // Store current dimensions before minimizing
+                totalLoadsPanel.dataset.savedWidth = totalLoadsPanel.style.width || '600px';
+                totalLoadsPanel.dataset.savedHeight = totalLoadsPanel.style.height || '500px';
+                // Clear inline dimensions to allow CSS to take over
+                totalLoadsPanel.style.width = '';
+                totalLoadsPanel.style.height = '';
+                minimizeTotalLoadsBtn.textContent = '+';
+            } else {
+                // Restore previous dimensions when expanding
+                totalLoadsPanel.style.width = totalLoadsPanel.dataset.savedWidth || '600px';
+                totalLoadsPanel.style.height = totalLoadsPanel.dataset.savedHeight || '500px';
+                minimizeTotalLoadsBtn.textContent = '−';
+            }
         });
         
         // Show the panel by default (minimized)
@@ -6628,11 +6709,15 @@
             const btn = this;
             
             if (panel.classList.contains('minimized')) {
-                // Expand
+                // Expand - restore previous dimensions
                 panel.classList.remove('minimized');
+                panel.style.width = panel.dataset.savedWidth || '600px';
+                panel.style.height = panel.dataset.savedHeight || '700px';
                 btn.textContent = '−';
             } else {
-                // Minimize - clear inline styles first
+                // Minimize - store and clear inline styles
+                panel.dataset.savedWidth = panel.style.width || '600px';
+                panel.dataset.savedHeight = panel.style.height || '700px';
                 panel.style.width = '';
                 panel.style.height = '';
                 panel.classList.add('minimized');
