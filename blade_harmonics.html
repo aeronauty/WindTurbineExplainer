@@ -227,7 +227,7 @@
                     </div>
                     
                     <div class="harmonics-selector">
-                        <h4>Forcing Function: \(F(\theta) = \sum_{n=1}^{6} A_n \sin(n\theta)\)</h4>
+                        <h4>Forcing Function: \(F(\psi) = \sum_{n=1}^{6} A_n \sin(n\psi)\)</h4>
                         <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">Adjust amplitude coefficients for each harmonic (0 = disabled):</p>
                         
                         <div class="control-group">
@@ -271,7 +271,7 @@
             
             <div class="plots-panel">
                 <div class="plot-container">
-                    <div class="plot-title">Forcing Function Applied to Each Blade: \(F(\theta + \Delta\psi + \frac{2\pi b}{B})\)</div>
+                    <div class="plot-title">Forcing Function Applied to Each Blade: \(F(\psi + \Delta\psi + \frac{2\pi b}{B})\)</div>
                     <div id="forcingPlot"></div>
                 </div>
 
@@ -288,16 +288,16 @@
                 <div class="info-box">
                     <h3>Theory</h3>
                     <p><strong>Forcing Function:</strong> This visualizer allows you to create a custom forcing function composed of harmonics from 1P to 6P:</p>
-                    <div class="math">$$F(\theta) = A_1 \sin(\theta) + A_2 \sin(2\theta) + A_3 \sin(3\theta) + A_4 \sin(4\theta) + A_5 \sin(5\theta) + A_6 \sin(6\theta)$$</div>
+                    <div class="math">$$F(\psi) = A_1 \sin(\psi) + A_2 \sin(2\psi) + A_3 \sin(3\psi) + A_4 \sin(4\psi) + A_5 \sin(5\psi) + A_6 \sin(6\psi)$$</div>
                     
                     <p><strong>Blade Response:</strong> Each blade experiences this forcing function with a spatial phase shift based on its azimuthal position. Note that the phase shift is the same for all harmonics:</p>
-                    <div class="math">$$F_b(\theta) = \sum_{n=1}^{6} A_n \sin\left(n\theta + \Delta\psi + \frac{2\pi b}{B}\right)$$</div>
+                    <div class="math">$$F_b(\psi) = \sum_{n=1}^{6} A_n \sin\left(n\psi + \Delta\psi + \frac{2\pi b}{B}\right)$$</div>
                     
                     <p><strong>Rotating vs Fixed Frame:</strong></p>
                     <ul style="line-height: 1.8; color: #555;">
                         <li><strong style="color: #3498db;">Rotating Frame (Blue):</strong> \(B \times\) input amplitudes, where \(B\) is the number of blades. Each blade experiences the same forcing function, so the total harmonic content in the rotating frame is simply \(B\) times the input.</li>
                         <li><strong style="color: #e74c3c;">Fixed Frame (Red):</strong> Load projected onto a fixed direction in space: 
-                        <div class="math" style="background: transparent; padding: 10px 0;">$$\sum_{b=0}^{B-1} F_b(\theta) \cos\left(\theta + \Delta\psi + \frac{2\pi b}{B}\right)$$</div>
+                        <div class="math" style="background: transparent; padding: 10px 0;">$$\sum_{b=0}^{B-1} F_b(\psi) \cos\left(\psi + \Delta\psi + \frac{2\pi b}{B}\right)$$</div>
                         This is what the tower experiences.</li>
                     </ul>
                     
@@ -376,12 +376,12 @@
         }
         
         // Create forcing function with harmonics
-        function forcingFunction(theta, phase, A) {
+        function forcingFunction(psi, phase, A) {
             // F(θ) = Σ Aₙ·sin(n·θ + phase)
             // Note: phase is NOT multiplied by n - each harmonic sees the same blade offset
             let result = 0;
             for (let n = 1; n <= 6; n++) {
-                result += A[n-1] * Math.sin(n * theta + phase);
+                result += A[n-1] * Math.sin(n * psi + phase);
             }
             return result;
         }
@@ -402,8 +402,8 @@
                 parseFloat(A6Slider.value)
             ];
             
-            // Generate theta values
-            const theta = Array.from({length: resolution}, (_, i) => (2 * Math.PI * i) / resolution);
+            // Generate psi values
+            const psi = Array.from({length: resolution}, (_, i) => (2 * Math.PI * i) / resolution);
             
             // Initialize sum array
             const forcingSum = new Array(resolution).fill(0);
@@ -414,7 +414,7 @@
             
             for (let b = 0; b < B; b++) {
                 const phase = dpsi + (2 * Math.PI * b) / B;
-                const forcingValues = theta.map(t => forcingFunction(t, phase, A));
+                const forcingValues = psi.map(t => forcingFunction(t, phase, A));
                 
                 // Store blade data
                 bladeData.push(forcingValues);
@@ -428,7 +428,7 @@
             // Create traces for each blade
             for (let b = 0; b < B; b++) {
                 forcingTraces.push({
-                    x: theta,
+                    x: psi,
                     y: bladeData[b],
                     mode: 'lines',
                     name: `Blade ${b + 1}`,
@@ -439,7 +439,7 @@
             
             // Add sum trace
             forcingTraces.push({
-                x: theta,
+                x: psi,
                 y: forcingSum,
                 mode: 'lines',
                 name: 'Sum',
@@ -456,13 +456,13 @@
             const fixedFrameLoad = new Array(resolution).fill(0);
             for (let b = 0; b < B; b++) {
                 for (let i = 0; i < resolution; i++) {
-                    const bladeAngle = theta[i] + dpsi + (2 * Math.PI * b) / B;
+                    const bladeAngle = psi[i] + dpsi + (2 * Math.PI * b) / B;
                     // Project blade load onto fixed horizontal direction
                     fixedFrameLoad[i] += bladeData[b][i] * Math.cos(bladeAngle);
                 }
             }
             
-            return {forcingTraces, amplitudes: A, outputHarmonics, theta, forcingSum, fixedFrameLoad, bladeData};
+            return {forcingTraces, amplitudes: A, outputHarmonics, psi, forcingSum, fixedFrameLoad, bladeData};
         }
 
         // Plot configuration
@@ -501,7 +501,7 @@
         // Update plots
         function updatePlots() {
             updateDisplays();
-            const {forcingTraces, amplitudes, outputHarmonics, theta, forcingSum, fixedFrameLoad, bladeData} = generateData();
+            const {forcingTraces, amplitudes, outputHarmonics, psi, forcingSum, fixedFrameLoad, bladeData} = generateData();
             const B = parseInt(numBladesSlider.value);
             
             const forcingLayout = {...layout, yaxis: {...layout.yaxis, title: 'F(θ + Δψ + 2πb/B)'}};
@@ -516,14 +516,14 @@
             const fixedFrameTraces = [];
             
             for (let b = 0; b < B; b++) {
-                const bladeFixedLoad = new Array(theta.length).fill(0);
-                for (let i = 0; i < theta.length; i++) {
-                    const bladeAngle = theta[i] + dpsi + (2 * Math.PI * b) / B;
+                const bladeFixedLoad = new Array(psi.length).fill(0);
+                for (let i = 0; i < psi.length; i++) {
+                    const bladeAngle = psi[i] + dpsi + (2 * Math.PI * b) / B;
                     bladeFixedLoad[i] = bladeData[b][i] * Math.cos(bladeAngle);
                 }
                 
                 fixedFrameTraces.push({
-                    x: theta,
+                    x: psi,
                     y: bladeFixedLoad,
                     mode: 'lines',
                     name: `Blade ${b + 1}`,
@@ -537,7 +537,7 @@
             
             // Add total fixed frame load
             fixedFrameTraces.push({
-                x: theta,
+                x: psi,
                 y: fixedFrameLoad,
                 mode: 'lines',
                 name: 'Sum (Tower Load)',
