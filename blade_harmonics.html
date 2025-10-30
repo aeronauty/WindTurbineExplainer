@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Blade Harmonics Visualizer</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <style>
         * {
             margin: 0;
@@ -154,10 +156,11 @@
 
         .math {
             background: #f5f5f5;
-            padding: 10px;
+            padding: 15px;
             border-radius: 5px;
-            font-family: 'Courier New', monospace;
-            margin: 10px 0;
+            margin: 15px 0;
+            overflow-x: auto;
+            text-align: center;
         }
 
         .harmonics-selector {
@@ -223,13 +226,8 @@
                         <span class="value-display" id="resolutionValue">360</span>
                     </div>
                     
-                    <div class="control-group">
-                        <label for="subtractMean">Subtract Mean (over rotation):</label>
-                        <input type="checkbox" id="subtractMean" style="width: auto; height: 20px;">
-                    </div>
-                    
                     <div class="harmonics-selector">
-                        <h4>Forcing Function: F(θ) = Σ Aₙ·sin(n·θ)</h4>
+                        <h4>Forcing Function: \(F(\theta) = \sum_{n=1}^{6} A_n \sin(n\theta)\)</h4>
                         <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">Adjust amplitude coefficients for each harmonic (0 = disabled):</p>
                         
                         <div class="control-group">
@@ -273,7 +271,7 @@
             
             <div class="plots-panel">
                 <div class="plot-container">
-                    <div class="plot-title">Forcing Function Applied to Each Blade: F(θ + Δψ + 2πb/B)</div>
+                    <div class="plot-title">Forcing Function Applied to Each Blade: \(F(\theta + \Delta\psi + \frac{2\pi b}{B})\)</div>
                     <div id="forcingPlot"></div>
                 </div>
 
@@ -290,18 +288,20 @@
                 <div class="info-box">
                     <h3>Theory</h3>
                     <p><strong>Forcing Function:</strong> This visualizer allows you to create a custom forcing function composed of harmonics from 1P to 6P:</p>
-                    <div class="math">F(θ) = A₁·sin(θ) + A₂·sin(2θ) + A₃·sin(3θ) + A₄·sin(4θ) + A₅·sin(5θ) + A₆·sin(6θ)</div>
+                    <div class="math">$$F(\theta) = A_1 \sin(\theta) + A_2 \sin(2\theta) + A_3 \sin(3\theta) + A_4 \sin(4\theta) + A_5 \sin(5\theta) + A_6 \sin(6\theta)$$</div>
                     
                     <p><strong>Blade Response:</strong> Each blade experiences this forcing function with a spatial phase shift based on its azimuthal position. Note that the phase shift is the same for all harmonics:</p>
-                    <div class="math">F_b(θ) = Σ Aₙ·sin(n·θ + Δψ + 2πb/B)</div>
+                    <div class="math">$$F_b(\theta) = \sum_{n=1}^{6} A_n \sin\left(n\theta + \Delta\psi + \frac{2\pi b}{B}\right)$$</div>
                     
                     <p><strong>Rotating vs Fixed Frame:</strong></p>
                     <ul style="line-height: 1.8; color: #555;">
-                        <li><strong style="color: #3498db;">Rotating Frame (Blue):</strong> B × input amplitudes, where B is the number of blades. Each blade experiences the same forcing function, so the total harmonic content in the rotating frame is simply B times the input.</li>
-                        <li><strong style="color: #e74c3c;">Fixed Frame (Red):</strong> Load projected onto a fixed direction in space: Σ F_b(θ)·cos(θ + 2πb/B). This is what the tower experiences.</li>
+                        <li><strong style="color: #3498db;">Rotating Frame (Blue):</strong> \(B \times\) input amplitudes, where \(B\) is the number of blades. Each blade experiences the same forcing function, so the total harmonic content in the rotating frame is simply \(B\) times the input.</li>
+                        <li><strong style="color: #e74c3c;">Fixed Frame (Red):</strong> Load projected onto a fixed direction in space: 
+                        <div class="math" style="background: transparent; padding: 10px 0;">$$\sum_{b=0}^{B-1} F_b(\theta) \cos\left(\theta + \Delta\psi + \frac{2\pi b}{B}\right)$$</div>
+                        This is what the tower experiences.</li>
                     </ul>
                     
-                    <p><strong>Key Insight:</strong> For a B-bladed turbine, harmonics at integer multiples of B reinforce in the rotating frame but may transform to different frequencies in the fixed frame. The comparison chart shows which harmonics survive in each reference frame.</p>
+                    <p><strong>Key Insight:</strong> For a \(B\)-bladed turbine, harmonics at integer multiples of \(B\) reinforce in the rotating frame but may transform to different frequencies in the fixed frame. The comparison chart shows which harmonics survive in each reference frame.</p>
                     
                     <p><strong>Practical Application:</strong> This helps understand how different frequency components in wind loads (tower shadow, yaw error, wind shear, etc.) affect both rotating (hub) and non-rotating (tower) structure loads.</p>
                 </div>
@@ -314,7 +314,6 @@
         const numBladesSlider = document.getElementById('numBlades');
         const phaseShiftSlider = document.getElementById('phaseShift');
         const resolutionSlider = document.getElementById('resolution');
-        const subtractMeanCheckbox = document.getElementById('subtractMean');
         const numBladesValue = document.getElementById('numBladesValue');
         const phaseShiftValue = document.getElementById('phaseShiftValue');
         const resolutionValue = document.getElementById('resolutionValue');
@@ -392,7 +391,6 @@
             const B = parseInt(numBladesSlider.value);
             const dpsi = parseFloat(phaseShiftSlider.value);
             const resolution = parseInt(resolutionSlider.value);
-            const subtractMean = subtractMeanCheckbox.checked;
             
             // Get harmonic amplitudes
             const A = [
@@ -427,26 +425,11 @@
                 }
             }
             
-            // Calculate means if subtract mean is enabled
-            let bladeMeans = [];
-            let sumMean = 0;
-            
-            if (subtractMean) {
-                for (let b = 0; b < B; b++) {
-                    bladeMeans.push(calculateMean(bladeData[b]));
-                }
-                sumMean = calculateMean(forcingSum);
-            }
-            
-            // Create traces with or without mean subtraction
+            // Create traces for each blade
             for (let b = 0; b < B; b++) {
-                const values = subtractMean 
-                    ? bladeData[b].map(v => v - bladeMeans[b])
-                    : bladeData[b];
-                
                 forcingTraces.push({
                     x: theta,
-                    y: values,
+                    y: bladeData[b],
                     mode: 'lines',
                     name: `Blade ${b + 1}`,
                     line: {width: 1.5},
@@ -455,13 +438,9 @@
             }
             
             // Add sum trace
-            const finalSum = subtractMean 
-                ? forcingSum.map(v => v - sumMean)
-                : forcingSum;
-            
             forcingTraces.push({
                 x: theta,
-                y: finalSum,
+                y: forcingSum,
                 mode: 'lines',
                 name: 'Sum',
                 line: {width: 3, color: 'black'},
@@ -530,7 +509,6 @@
             Plotly.newPlot('forcingPlot', forcingTraces, forcingLayout, config);
             
             // Create combined load plot showing individual blade contributions in fixed frame
-            const subtractMean = subtractMeanCheckbox.checked;
             const dpsi = parseFloat(phaseShiftSlider.value);
             
             // Calculate each blade's contribution to fixed frame
@@ -544,15 +522,9 @@
                     bladeFixedLoad[i] = bladeData[b][i] * Math.cos(bladeAngle);
                 }
                 
-                let displayBladeLoad = bladeFixedLoad;
-                if (subtractMean) {
-                    const bladeMean = calculateMean(bladeFixedLoad);
-                    displayBladeLoad = bladeFixedLoad.map(v => v - bladeMean);
-                }
-                
                 fixedFrameTraces.push({
                     x: theta,
-                    y: displayBladeLoad,
+                    y: bladeFixedLoad,
                     mode: 'lines',
                     name: `Blade ${b + 1}`,
                     line: {
@@ -564,15 +536,9 @@
             }
             
             // Add total fixed frame load
-            let displaySum = fixedFrameLoad;
-            if (subtractMean) {
-                const sumMean = calculateMean(fixedFrameLoad);
-                displaySum = fixedFrameLoad.map(v => v - sumMean);
-            }
-            
             fixedFrameTraces.push({
                 x: theta,
-                y: displaySum,
+                y: fixedFrameLoad,
                 mode: 'lines',
                 name: 'Sum (Tower Load)',
                 line: {width: 3, color: 'black'},
@@ -698,7 +664,6 @@
         numBladesSlider.addEventListener('input', updatePlots);
         phaseShiftSlider.addEventListener('input', updatePlots);
         resolutionSlider.addEventListener('input', updatePlots);
-        subtractMeanCheckbox.addEventListener('change', updatePlots);
         
         // Add event listeners for amplitude sliders
         A1Slider.addEventListener('input', updatePlots);
